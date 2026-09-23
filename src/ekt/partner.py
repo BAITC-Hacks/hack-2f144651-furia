@@ -120,6 +120,7 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
         raise ValueError("Пустая область склада")
     tables = defaultdict(list)
     products, monthly_candidates = {}, defaultdict(list)
+    quantity_candidates = defaultdict(list)
     notes = ["В исходных схемах нет customer_id, stockout-интервалов и сроков новых заказов. Эти поля не восстановлены автоматически."]
     if confirmed_scope:
         notes.append(f"Ручное допущение: отчёты и все склады накладных сведены в общую область «{scope}».")
@@ -138,6 +139,10 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
                     products[sku]["unit_conflict"] = "yes"
                 elif key != "unit" or not products[sku].get("unit_conflict"):
                     products[sku][key] = value
+
+    def quantity_rule(sku, field, quantity, provenance, source_rank):
+        if quantity is not None:
+            quantity_candidates[(sku, field)].append((source_rank, quantity, provenance))
 
     def sku_text(value):
         code = text(value)
@@ -247,8 +252,9 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
                         continue
                     prov = dict(source_file=file, source_sheet=sheet.title, source_row=str(rn), data_mode="partner")
                     product(sku, prov, name=text(values[name_col]), unit=text(values[3]) if stock_report and supplier == "Systeme" else None,
-                        supplier_sku=text(values[2]) if not stock_report and supplier == "Systeme" else None,
-                        order_multiple=numeric(values[3]) if not stock_report and supplier == "Systeme" else None)
+                        supplier_sku=text(values[2]) if not stock_report and supplier == "Systeme" else None)
+                    if not stock_report and supplier == "Systeme":
+                        quantity_rule(sku, "order_multiple", numeric(values[3]), prov, 1)
                     for col, month in months.items():
                         qty = numeric(values[col])
                         if qty is None or month > report_date:
@@ -272,14 +278,14 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
                         continue
                     prov = dict(source_file=file, source_sheet=sheet.title, source_row=str(rn), data_mode="partner")
                     quantity = numeric(values[4])
-                    fields = dict(supplier_sku=text(values[code_col + 1]), quantity_rule_source=f"{file}:{rn}")
                     if supplier == "Systeme" or iek_moq_meaning == "multiple":
-                        fields["order_multiple"] = quantity
+                        field = "order_multiple"
                     elif iek_moq_meaning == "minimum":
-                        fields["min_order_qty"] = quantity
+                        field = "min_order_qty"
                     else:
-                        fields["unconfirmed_moq"] = quantity
-                    product(sku, prov, **fields)
+                        field = "unconfirmed_moq"
+                    product(sku, prov, supplier_sku=text(values[code_col + 1]))
+                    quantity_rule(sku, field, quantity, prov, 0)
                 if supplier == "IEK" and iek_moq_meaning == "unknown":
                     notes.append("IEK «Мин. разр. к отгр.» сохранено как unconfirmed_moq: подтвердите minimum или multiple.")
             elif "путь" in lower and supplier == "IEK":
@@ -336,6 +342,24 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
     for file, number in skipped.items():
         notes.append(f"{file}: пропущено {number} служебных строк / строк без даты или кода.")
     notes.append(f"Обнаружено XLSX: {count}. Товаров: {len(products)}. Знаки количеств сохранены; поступления и заказы покупателей не считаются продажами.")
+    for (sku, field), candidates in sorted(quantity_candidates.items()):
+        # Rank only chooses provenance among equal values, never an authority
+        # for conflicting business rules. Keep the existing file:row contract.
+        candidates.sort(key=lambda item: (item[0], item[2]["source_file"], item[2]["source_sheet"], int(item[2]["source_row"])))
+        _, quantity, provenance = candidates[0]
+
+        def quantity_source(value, prov):
+            return f"{prov['source_file']}/{prov['source_sheet']}:{prov['source_row']}={value!r}"
+
+        for _, other_quantity, other_provenance in candidates[1:]:
+            if other_quantity != quantity:
+                raise ValueError(
+                    f"Конфликт правила закупки {supplier} / {sku} / {field}: "
+                    f"{quantity_source(quantity, provenance)}; {quantity_source(other_quantity, other_provenance)}. "
+                    "Приоритет источников не подтверждён; уточните значение, импорт остановлен."
+                )
+        products[sku][field] = quantity
+        products[sku]["quantity_rule_source"] = f"{provenance['source_file']}:{provenance['source_row']}"
     tables["products"] = list(products.values())
     for (sku, month), candidates in sorted(monthly_candidates.items()):
         candidates.sort(key=lambda item: (-item[0], item[1]["source_file"], item[1]["source_sheet"], int(item[1]["source_row"])))
