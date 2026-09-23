@@ -1,6 +1,6 @@
 """Conservative IEK/Systeme adapters based on the supplied schema audit.
 
-Verified using synthetic workbooks shaped like the audit, not partner archives.
+Supplied-archive checks and remaining limitations: docs/handoffs/backend.md.
 Unknown scope, units, formula caches and policy semantics remain visible.
 """
 from __future__ import annotations
@@ -120,8 +120,7 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
         raise ValueError("Пустая область склада")
     tables = defaultdict(list)
     products, monthly_candidates = {}, defaultdict(list)
-    notes = ["Адаптеры проверены на синтетических макетах схем. Требуется сверка на оригинальных архивах.",
-             "В исходных схемах нет customer_id, stockout-интервалов и сроков новых заказов. Эти поля не восстановлены автоматически."]
+    notes = ["В исходных схемах нет customer_id, stockout-интервалов и сроков новых заказов. Эти поля не восстановлены автоматически."]
     if confirmed_scope:
         notes.append(f"Ручное допущение: отчёты и все склады накладных сведены в общую область «{scope}».")
     skipped = defaultdict(int)
@@ -231,6 +230,11 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
                 headers = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
                 code_col = 2 if stock_report else 1
                 check_code(headers, code_col, file)
+                # Some stock reports put an ordinal before the product name;
+                # others start with the name itself.
+                name_col = next((i for i, header in enumerate(headers[:code_col])
+                                 if str(header or "").strip().lower() == "номенклатура"
+                                 or str(header or "").strip().lower().startswith("наименование")), 0)
                 first_month = 3 if supplier == "IEK" and stock_report else 2 if supplier == "IEK" else 4
                 months = {i: month_value(headers[i]) for i in range(first_month, len(headers))}
                 months = {i: m for i, m in months.items() if m is not None}
@@ -242,7 +246,7 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
                         skipped[file] += 1
                         continue
                     prov = dict(source_file=file, source_sheet=sheet.title, source_row=str(rn), data_mode="partner")
-                    product(sku, prov, name=text(values[0]), unit=text(values[3]) if stock_report and supplier == "Systeme" else None,
+                    product(sku, prov, name=text(values[name_col]), unit=text(values[3]) if stock_report and supplier == "Systeme" else None,
                         supplier_sku=text(values[2]) if not stock_report and supplier == "Systeme" else None,
                         order_multiple=numeric(values[3]) if not stock_report and supplier == "Systeme" else None)
                     for col, month in months.items():
