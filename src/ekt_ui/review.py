@@ -28,7 +28,7 @@ def publish_edits(calculation, edits):
 
 def grid_style(frame):
     style = pd.DataFrame("", index=frame.index, columns=frame.columns)
-    colors = {"Критично": "#fff0f3", "Нужны данные": "#fff6dc", "Пополнение": "#eef3ff", "Норма": "#eaf7f1"}
+    colors = {"Критично": "#fff0f3", "Нужны данные": "#fff6dc", "Риск не определён": "#fff6dc", "Пополнение": "#eef3ff", "Норма": "#eaf7f1"}
     style["priority"] = frame.priority.map(lambda value: f"background-color: {colors[value]}; color: #303846; font-weight: 600")
     style.loc[frame.manual_edit.ne(""), "manual_edit"] = "background-color: #fff6dc; color: #8b5a00"
     return style

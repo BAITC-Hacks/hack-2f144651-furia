@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 
+from ekt.engine import classify_risk
 from ekt.schema import KEY
 
 
@@ -11,15 +12,31 @@ def number(value, digits=1):
     return f"{value:,.{digits}f}".replace(",", " ").rstrip("0").rstrip(".") if digits else f"{value:,.0f}".replace(",", " ")
 
 
-def urgency_label(row, as_of):
-    if pd.isna(row.recommended_qty):
+def _risk_label(status):
+    if status["calculation_status"] == "unavailable":
         return "Нужны данные"
-    risk_date = pd.to_datetime(row.get("risk_date"), errors="coerce")
-    if pd.notna(risk_date) and (risk_date - pd.Timestamp(as_of)).days < 7:
+    if status["risk_level"] == "unknown":
+        return "Риск не определён"
+    if status["risk_level"] == "critical":
         return "Критично"
-    if row.urgency == "Риск дефицита" or row.recommended_qty > 0:
+    if status["risk_level"] == "risk" or status["order_required"]:
         return "Пополнение"
     return "Норма"
+
+
+def urgency_label(row, as_of):
+    return _risk_label(classify_risk(row, as_of))
+
+
+def risk_statuses(calculation):
+    """Presentation metadata from unchanged engine rows, before manager edits."""
+    records = []
+    for _, row in calculation.rows.iterrows():
+        status = classify_risk(row, calculation.config["as_of"])
+        records.append({"row_id": row.row_id, **status, "priority": _risk_label(status)})
+    return pd.DataFrame(records, index=calculation.rows.index, columns=[
+        "row_id", "risk_level", "days_to_risk", "calculation_status", "order_required", "priority",
+    ])
 
 
 def manual_mask(rows):
@@ -31,8 +48,8 @@ def manual_mask(rows):
 
 
 def order_grid(calculation, edits):
-    rows = calculation.rows.merge(edits, on="row_id", validate="one_to_one")
-    rows["priority"] = rows.apply(urgency_label, axis=1, as_of=calculation.config["as_of"])
+    rows = calculation.rows.merge(risk_statuses(calculation), on="row_id", validate="one_to_one")
+    rows = rows.merge(edits, on="row_id", validate="one_to_one")
     rows["manual_edit"] = np.where(manual_mask(rows), "Ручная правка", "")
     rows["history"] = [
         calculation.details[row_id]["demand"].monthly["raw"].tail(6).tolist()
@@ -49,7 +66,7 @@ def filter_orders(rows, suppliers, scopes, categories, risk="Все", search="")
     mask = (rows.supplier_id.isin(suppliers) & rows.warehouse_scope.isin(scopes)
             & rows.category_id.fillna("Не указана").isin(categories))
     if risk == "Риск дефицита":
-        mask &= rows.urgency.eq("Риск дефицита")
+        mask &= rows.risk_level.isin(["critical", "risk"])
     elif risk == "Ручные правки":
         mask &= rows.manual_edit.ne("")
     elif risk != "Все":

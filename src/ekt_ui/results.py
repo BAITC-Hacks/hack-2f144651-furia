@@ -48,6 +48,6 @@ def render_filters(rows):
     category_filter = category_col.multiselect("Категории", categories, default=categories, placeholder="Категории")
     scopes = rows.warehouse_scope.unique().tolist()
     scope_filter = scope_col.multiselect("Области склада", scopes, default=scopes, placeholder="Области склада")
-    risk = risk_col.selectbox("Уровень риска", ["Все", "Риск дефицита", "Критично", "Пополнение", "Норма", "Нужны данные", "Ручные правки"], help="Критично: прогнозируемый дефицит менее чем через 7 дней. Избыток не классифицируется без согласованного порога.")
+    risk = risk_col.selectbox("Уровень риска", ["Все", "Риск дефицита", "Критично", "Пополнение", "Норма", "Нужны данные", "Риск не определён", "Ручные правки"], help="Критично: прогнозируемый дефицит менее чем через 7 дней. «Риск дефицита» включает только прогнозируемый дефицит; пополнение может быть нужно для страхового запаса.")
     return filter_orders(rows, suppliers if supplier == "Все поставщики" else [supplier],
                          scope_filter, category_filter, risk, search)

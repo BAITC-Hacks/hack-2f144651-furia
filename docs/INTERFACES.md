@@ -54,6 +54,17 @@ partner/synthetic/manual. Дополнительные столбцы допус
 - `demand.build_demand(sales, monthly, stockouts, as_of,
   remove_oneoffs=True, compensate=True) -> DemandResult`. Входы одного KEY.
   Результат: daily, monthly, events, warnings.
+- `demand.detector_status(sales, as_of, enabled=True) -> dict`: только продажи
+  одного supplier_id/sku_1c/warehouse_scope; учитывает дату ≤ as_of, знак возвратов
+  и положительные группы клиент/дата (без клиента — документ/дата, затем строка).
+  Поля: status (`disabled`, `insufficient_history`, `evaluated`),
+  positive_event_count, minimum_events (12). Отключение имеет приоритет.
+  `evaluated` означает применимость эвристики; её выполнение подтверждает
+  сохранённый DemandResult. Monthly-only история даёт 0 событий.
+- `DemandResult.events` содержит найденные события; `applied=True` означает
+  фактическое исключение. При замене детализации месячным итогом applied=False
+  только у событий в заменённом интервале покрытия. Пустые events не доказывают
+  отсутствие аномалий; warnings сохраняются отдельно.
 - daily: календарный DatetimeIndex; raw, excluded, stockout, covered, regular,
   imputed, corrected. monthly: DatetimeIndex начала месяца; raw, excluded,
   imputed, corrected, covered_days, days, complete.
@@ -65,6 +76,22 @@ partner/synthetic/manual. Дополнительные столбцы допус
 - `engine.calculate(bundle, as_of, remove_oneoffs=True, compensate=True)
   -> Calculation(rows, details, fingerprint, config)`. Ошибка схемы — ValueError;
   недостаток данных позиции — строка с NaN recommended_qty и объяснением.
+- `engine.classify_risk(row, as_of) -> dict`: неизменённая строка Calculation.rows
+  или None; отдельные calculation_status (`calculated`/`unavailable`), risk_level
+  (`critical`/`risk`/`none`/`unknown`), days_to_risk и order_required.
+  Конечное неотрицательное количество означает рассчитанный заказ. Critical —
+  дата риска менее чем через 7 дней; день 7 — risk. Нулевой заказ может иметь
+  риск, положительный заказ может пополнять страховой запас без дефицита.
+  Непригодные метаданные риска не превращаются в none. Непригодная дата as_of
+  вызывает ValueError; строки/расчёт не изменяются.
+
+UI передаёт обоим helpers `calculation.config["as_of"]`, детектору также
+`config["remove_oneoffs"]`. Таблица, KPI риска, фильтры и карточка используют
+classify_risk. Подписи: unavailable → «Нужны данные», calculated/unknown →
+«Риск не определён», critical → «Критично», risk либо order_required=True →
+«Пополнение», остальные рассчитанные none → «Норма». KPI/фильтр «Риск дефицита»
+включают только critical/risk. Unknown и unavailable входят в перепроверку
+наряду с предупреждениями движка. Правки менеджера не меняют эту классификацию.
 
 Rows содержит row_id, ключи, unit/category_id, recommended_qty, urgency, explanation,
 data_warnings, assumptions и компоненты успешного расчёта. Details индексируется
