@@ -20,48 +20,40 @@ UI читает контракты и вызывает публичные фун
 принадлежат Logic. Форматы файлов принадлежат Backend. Backend/Logic разделены
 по модулям внутри существующего пакета ekt, а не на независимо запускаемые сервисы.
 
-## Карта Файлов
+## Назначение модулей
 
-| Файлы | Назначение и владелец |
+Здесь описана архитектура, а не отдельная таблица разрешений. Единственное
+распределение владельцев и исключений — в [AGENT_PLAN](AGENT_PLAN.md).
+
+| Файлы | Назначение |
 |---|---|
-| app.py | Интегратор: стабильная точка запуска |
-| src/ekt_ui/app.py, __init__.py | Frontend: сборка рабочего экрана |
-| src/ekt_ui/imports.py, inputs.py, state.py | Frontend: импорт, входные таблицы и жизненный цикл сессии |
-| src/ekt_ui/results.py, review.py | Frontend: запуск расчёта, фильтры, таблица правок, утверждение и скачивание |
-| src/ekt_ui/presentation.py, details.py, quality.py | Frontend: представления, графики компонентов, очереди данных и поставок |
-| src/ekt_ui/layout.py, styles.css, .streamlit/config.toml | Frontend: компоновка, адаптивная тема |
-| src/ekt/application.py | Backend: операции над наборами и provenance без UI |
-| src/ekt/ingest.py | Backend: канонический импорт и объединение таблиц |
-| src/ekt/partner.py | Backend: адаптеры IEK/Systeme |
-| src/ekt/export.py | Backend: безопасные CSV/XLSX и метаданные |
-| src/ekt/demo.py, data/demo/README.md | Backend: воспроизводимая синтетика |
-| src/ekt/schema.py, __init__.py | Интегратор: общий контракт данных |
-| src/ekt/demand.py | Logic: регулярный спрос, события и stockout |
-| src/ekt/forecast.py | Logic: сезонность, тренд и план роста |
-| src/ekt/engine.py | Logic: предложение, риск и объяснение |
-| src/ekt/review.py | Logic: правки, утверждение, статус экспорта |
-| tests/frontend/ | Frontend: Streamlit AppTest |
-| tests/backend/ | Backend: операции application |
-| tests/test_partner.py | Backend: синтетические схемы 12 отчётов |
-| tests/test_acceptance.py | Logic: причинная приёмка M1-M5 |
-| tests/test_edges.py | Backend/Logic: импорт, расчёт, краевые случаи |
-| tests/test_workflow.py, tests/conftest.py | Интегратор: сквозной сценарий, общие фикстуры |
-| scripts/smoke.py | Интегратор: CLI импорт -> расчёт -> правка -> утверждение -> экспорт |
-| pyproject.toml, requirements.lock, setup.ps1, .gitignore | Интегратор: зависимости, окружение и запуск |
-| README.md, THIRD_PARTY.md | Интегратор: вход в проект и лицензии |
-| docs/INPUT_GUIDE.md | Backend: пользовательский ввод |
-| docs/METHODOLOGY.md | Logic: формулы и объяснения |
-| docs/DEMO.md | Frontend + интегратор: сценарий демонстрации |
-| docs/DATA_LIMITATIONS.md | Backend + Logic: ограничения данных и модели |
-| docs/STATUS.md, docs/VERIFICATION.md | Интегратор: состояние и история проверок |
-| docs/kit/CASE_BRIEF.md, ACCEPTANCE.md | Исторические требования и исходная приёмка |
-| docs/kit/DATA_CONTRACTS.md, DATA_AUDIT.md, ENGINE_SPEC.md | Исторические контракты, аудит и метод |
-| AGENTS.md, вложенные AGENTS.md | Правила ролей соответствующих зон |
-| docs/DEVELOPMENT.md, TASK_TEMPLATE.md, TASKS.md | Процесс, шаблон задачи и backlog |
+| app.py | Стабильная точка запуска |
+| src/ekt_ui/app.py, __init__.py | Сборка рабочего экрана |
+| src/ekt_ui/imports.py, inputs.py, state.py | Импорт в UI, входные таблицы и жизненный цикл сессии |
+| src/ekt_ui/results.py, review.py | Запуск расчёта, фильтры, таблица правок, утверждение и скачивание |
+| src/ekt_ui/presentation.py, details.py, quality.py | Представления, графики компонентов, очереди данных и поставок |
+| src/ekt_ui/layout.py, styles.css, .streamlit/config.toml | Компоновка и адаптивная тема |
+| src/ekt/application.py | Операции над наборами и provenance без UI |
+| src/ekt/ingest.py, partner.py | Канонический импорт и адаптеры IEK/Systeme |
+| src/ekt/export.py | Безопасные CSV/XLSX и метаданные |
+| src/ekt/demo.py, data/demo/README.md | Воспроизводимая синтетика |
+| src/ekt/schema.py, __init__.py | Общий контракт данных |
+| src/ekt/demand.py | Регулярный спрос, события и stockout |
+| src/ekt/forecast.py | Сезонность, тренд и план роста |
+| src/ekt/engine.py | Предложение, риск и объяснение |
+| src/ekt/review.py | Правки, утверждение, состав и статус экспортируемых строк |
+| tests/frontend/, tests/backend/, тесты расчёта | Проверки поведения соответствующих модулей |
+| tests/test_acceptance.py, test_edges.py, test_workflow.py, conftest.py | Общая приёмка M1–M5, края, сквозные сценарии и fixtures |
+| scripts/smoke.py | CLI импорт → расчёт → правка → утверждение → экспорт |
+| docs/INTERFACES.md | Описание существующего Python API |
+| docs/TASKS.md, TASK_TEMPLATE.md | Актуальный backlog и конкретные назначения |
+| docs/STATUS.md, VERIFICATION.md | Результаты и история проверок |
 
-docs/kit не является текущим backlog. Например, исходное ACCEPTANCE говорит, что
-приложения ещё нет. Упоминание реальных архивов в DATA_AUDIT относится к исходному
-комплекту: этих архивов в данном checkout нет. Актуальные задачи находятся в TASKS.
+Архив docs/kit, [прежний план](history/AGENT_PLAN_LEGACY.md), старые handoff
+и завершённые этапы STATUS не являются текущими назначениями. Например, исходное
+ACCEPTANCE говорит, что приложения ещё нет. Актуальные задачи находятся в TASKS,
+доступность оригиналов и оставшиеся ограничения — в свежих записях STATUS и
+[DATA_LIMITATIONS](DATA_LIMITATIONS.md).
 
 ## Контракты
 
@@ -82,24 +74,17 @@ warehouse_scope, unit, recommended_qty, explanation и поля details.
 Изменение схемы требует согласования потребителей и проверки импорта, расчёта,
 UI и экспорта. Функции изменения входов не мутируют исходный Bundle или кеш UI.
 
-## Работа В Main И Приёмка
+## Работа в main и приёмка
 
-Для порученных Codex изменений работать прямо в `main`; feature-ветки не создавать,
-если пользователь явно этого не попросил. Сначала проверить рабочее дерево, обновить
-main fast-forward без переписывания истории, затем внести согласованные изменения.
-Ветки и отдельные worktree допустимы только по прямому запросу пользователя или
-для явно назначенного внешнего командного потока.
-
-Для сквозной фичи согласовать общий контракт и одного интегратора. Соблюдать
-назначенные роли и файлы из AGENT_PLAN; не редактировать чужую активную работу.
-Не выполнять force push, reset --hard или переписывание чужих коммитов.
+Назначения, границы файлов и приёмка определены в [AGENT_PLAN](AGENT_PLAN.md).
+Порядок обновления main, commit/push и сохранения чужой работы — в
+[корневых AGENTS](../AGENTS.md#git). В общем дереве Git выполняет интегратор;
+исполнители передают проверенные изменения назначенных файлов.
 
 Рекомендуемые сообщения коммитов: feat(frontend): ..., fix(backend): ...,
 feat(logic): ..., refactor(architecture): ..., test(integration): ..., docs(dev): ... .
-Один коммит описывает одну проверяемую цель и включает её тесты. Перед коммитом
-просмотреть diff. По постоянному указанию пользователя от 23.09.2026 после
-проверенной порученной работы Codex делает commit и push в origin/main; новые
-явные запреты имеют приоритет. Полный режим и исключения закреплены в AGENTS.md.
+Один коммит описывает одну проверяемую цель. После каждого завершённого и
+проверенного изменения, включая документацию, выполняются commit и push.
 
 ## История Коммитов
 

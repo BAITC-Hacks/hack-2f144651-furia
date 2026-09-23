@@ -2,8 +2,11 @@
 
 Источник истины — код. Здесь описан API перед передачей задач. Имена функций в
 `docs/kit/DATA_CONTRACTS.md` — исходное предложение, не повод создавать новые модули.
+Единственная таблица владельцев файлов — [AGENT_PLAN.md](AGENT_PLAN.md).
+Изменения общего контракта согласуются с Интегратором и потребителями независимо
+от файла реализации; правила работы с Git — в [AGENTS.md](../AGENTS.md).
 
-## Общие данные — LEAD
+## Общие данные
 
 `src/ekt/schema.py`:
 
@@ -25,9 +28,9 @@
 
 PROVENANCE: source_file, source_sheet, source_row, data_mode. Режимы:
 partner/synthetic/manual. Дополнительные столбцы допустимы, но normalize считает
-их строками, если они не в NUMBERS/DATES. Новые числовые поля согласовать с LEAD.
+их строками, если они не в NUMBERS/DATES. Новые числовые поля согласовать с Интегратором.
 
-## Импорт — DATA
+## Импорт
 
 - `ingest.read_canonical(data: bytes, filename: str, mode="manual") -> Bundle`:
   ZIP с именованными CSV, XLSX с каноническими листами или отдельный CSV.
@@ -46,7 +49,7 @@ partner/synthetic/manual. Дополнительные столбцы допус
 Адаптеры не рассчитывают заказы. Недостающие данные, несовместимая схема и
 противоречия источников должны быть видимы; клиентов/stockout не выдумывать.
 
-## Спрос и прогноз — ENGINE
+## Спрос и прогноз
 
 - `demand.build_demand(sales, monthly, stockouts, as_of,
   remove_oneoffs=True, compensate=True) -> DemandResult`. Входы одного KEY.
@@ -67,10 +70,11 @@ Rows содержит row_id, ключи, unit/category_id, recommended_qty, urg
 data_warnings, assumptions и компоненты успешного расчёта. Details индексируется
 row_id и содержит demand, forecast, policy, если этап прогноза выполнен. При ранней
 ошибке для row_id записи в details может не быть; balance/source_refs добавляются
-при успешном расчёте заказа. UI использует их напрямую: формы не менять без LEAD. В движке нет чтения
-Excel, Streamlit session state или внешних API.
+при успешном расчёте заказа. UI использует их напрямую: изменение полей Calculation,
+DemandResult и ForecastResult согласовать с Интегратором и потребителями. В движке
+нет чтения Excel, Streamlit session state или внешних API.
 
-## Решение менеджера и экспорт — LEAD
+## Решение менеджера
 
 - `review.initial_edits(rows) -> DataFrame`: row_id, selected, adjusted_qty, reason.
 - `review.approve(calculation, edits) -> Approval(signature, approved_at)`:
@@ -82,10 +86,25 @@ Excel, Streamlit session state или внешних API.
 - `review.export_frame(calculation, edits, approval=None) -> DataFrame`:
   final_qty, manager_override, draft/approved. Ноль — настоящее ручное решение.
   Изменение входов/правок делает старую подпись утверждения недействительной.
+
+Правила решения менеджера находятся в `src/ekt/review.py`; представление и
+состояние интерфейса — в `src/ekt_ui/review.py`. Публичные поля Approval и
+выходной таблицы согласуются с Интегратором и потребителями перед изменением.
+
+## Сериализация экспорта
+
 - `export.csv_bytes(frame, separator=";") -> bytes`;
   `export.xlsx_bytes(frame, metadata=None) -> bytes`.
+
+Для выгрузки заказа сериализация получает готовую таблицу из `review.export_frame`
+и не принимает решение об утверждении. Экспорт не отправляет заказ; числа и
+единицы берутся из результата расчёта и правок менеджера, опасный текст
+экранируется, XLSX сохраняет SKU текстом.
+
+## Демоданные
+
 - `demo.demo_bundle() -> Bundle`, `demo.canonical_zip(bundle) -> bytes`,
   `demo.DEMO_DATE = 2026-09-22`; демо всегда synthetic.
 
-Экспорт не отправляет заказ; числа и единицы берутся из результата расчёта,
-опасный текст экранируется, XLSX сохраняет SKU текстом.
+Изменение демоданных, затрагивающее общие числовые ожидания приёмки,
+согласовать с Интегратором до правок.
