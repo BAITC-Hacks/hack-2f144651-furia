@@ -1,0 +1,10 @@
+{"case": "fingerprint_precision", "old_qty": [230.0], "new_qty": [231.0], "same_hash": true, "status": ["approved"]}
+{"case": "prior_overflow", "validation": [], "rows": [{"expected_demand_horizon": 0.0, "recommended_qty": 0.0}]}
+{"case": "row_id_collision", "ids": ["e7be41cbf300ee07", "e7be41cbf300ee07"], "details": 1}
+{"case": "override_tolerance", "rows": [{"final_qty": 1000009.0, "manager_override": false, "approval_status": "approved"}]}
+{"case": "validation_amplification", "merge_sizes": [[3, 3, 9], [1, 3, 3]], "validation_errors": 1}
+{"case": "multiple_overflow", "validation": [], "error_type": "OverflowError"}
+{"case": "xlsx_identifiers", "xlsx": ["<MISSING>", "<MISSING>", "<MISSING>", "000001"], "csv": ["NA", "NULL", "N/A", "000001"]}
+{"case": "xlsx_control_character", "validation": [], "error_type": "IllegalCharacterError"}
+{"case": "ui_eager_export_error", "exceptions": ["Exception"], "table_editor_reached": false}
+{"case": "warehouse_identity_ui", "scopes": ["W", "W2"], "warehouse_column": false, "detail_labels": ["000001_ \u00b7 Synthetic product", "000001_ \u00b7 Synthetic product"]}
