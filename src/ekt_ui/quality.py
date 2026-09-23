@@ -17,8 +17,8 @@ def render_quality(calculation):
     if checks.empty:
         st.success("В текущем расчёте нет позиций с предупреждениями.")
         return
-    st.dataframe(checks, hide_index=True, width="stretch", column_order=["status", "supplier_id", "sku_1c", "name", "warehouse_scope", "data_warnings"],
-                 column_config={"status": "Статус", "supplier_id": "Поставщик", "sku_1c": "Код 1С", "name": "Товар", "warehouse_scope": "Область", "data_warnings": st.column_config.TextColumn("Замечания", width="large")})
+    st.dataframe(checks, hide_index=True, width="stretch", column_order=["status", "supplier_id", "sku_1c", "name", "warehouse_scope", "explanation", "data_warnings"],
+                 column_config={"status": "Статус", "supplier_id": "Поставщик", "sku_1c": "Код 1С", "name": "Товар", "warehouse_scope": "Область", "explanation": st.column_config.TextColumn("Причина / результат", width="large"), "data_warnings": st.column_config.TextColumn("Замечания", width="large")})
     st.download_button("Выгрузить замечания", csv_bytes(checks), "data_checks.csv", "text/csv", icon=":material/download:")
 
 

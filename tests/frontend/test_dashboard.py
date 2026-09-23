@@ -125,3 +125,45 @@ def test_recalculation_clears_old_manual_edits(calculated_app):
     assert not app.exception
     assert app.session_state["review_edits"].iloc[0].adjusted_qty > 0
     assert app.session_state["review_edits"].reason.eq("").all()
+
+
+def test_table_modes_preserve_edits_approval_and_export(calculated_app, downloads):
+    app = calculated_app
+    edit_order(app, 0, adjusted_qty=0.0, reason="Keep zero in both views")
+    choose(app, "button", "Утвердить выбранные позиции").click().run()
+    approval = app.session_state["approval"]
+    expected = downloads["csv"]
+    compact_key = app.session_state["review_editor_key"]
+    choose(app, "segmented_control", "Вид таблицы").set_value("Расчёт").run()
+    assert not app.exception
+    assert app.session_state["review_editor_key"] != compact_key
+    assert app.session_state["approval"] == approval
+    assert downloads["csv"] == expected
+    assert any("available_stock" in table.value for table in app.dataframe)
+    choose(app, "segmented_control", "Вид таблицы").set_value("Заказ").run()
+    assert not app.exception
+    assert downloads["csv"] == expected
+    assert app.session_state["review_edits"].iloc[0].adjusted_qty == 0
+    assert not any("available_stock" in table.value for table in app.dataframe)
+
+
+def test_reset_filters_preserves_review_and_approved_export(calculated_app, downloads):
+    app = calculated_app
+    edit_order(app, 0, adjusted_qty=0.0, reason="Keep zero after resetting filters")
+    choose(app, "button", "Утвердить выбранные позиции").click().run()
+    approval = app.session_state["approval"]
+    expected = downloads["csv"]
+    choose(app, "segmented_control", "Поставщики").set_value("IEK").run()
+    choose(app, "multiselect", "Категории").set_value([]).run()
+    choose(app, "multiselect", "Области склада").set_value([]).run()
+    choose(app, "selectbox", "Уровень риска").set_value("Ручные правки").run()
+    choose(app, "text_input", "Поиск товара").set_value("not found").run()
+    assert not app.session_state["review_context"]
+    choose(app, "button", "Сбросить фильтры").click().run()
+    assert not app.exception
+    assert len(app.session_state["review_context"]) == 4
+    assert choose(app, "segmented_control", "Поставщики").value == "Все поставщики"
+    assert choose(app, "text_input", "Поиск товара").value == ""
+    assert choose(app, "selectbox", "Уровень риска").value == "Все"
+    assert app.session_state["approval"] == approval
+    assert downloads["csv"] == expected
