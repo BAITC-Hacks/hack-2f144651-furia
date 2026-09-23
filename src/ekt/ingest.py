@@ -4,13 +4,18 @@ import io
 from pathlib import PurePosixPath
 import zipfile
 import pandas as pd
-from .schema import Bundle, SCHEMAS, normalize, validate
+from .schema import Bundle, REQUIRED, SCHEMAS, normalize
 
 MAX_BYTES = 100 * 1024 * 1024
+# Bundle fills omitted tables with empty frames. Keep import presence separately
+# from row data; pandas preserves attrs through Bundle.copy() and normalize().
+_CANONICAL_TABLE = "_ekt_canonical_table"
 
 
 def parse_csv(data: bytes):
     text = data.decode("utf-8-sig")
+    if not text.strip():
+        raise ValueError("CSV не содержит заголовков; для очистки таблицы оставьте обязательные столбцы")
     # All identifiers start as text; no numeric SKU coercion.
     separator = ";" if text.splitlines()[0].count(";") > text.splitlines()[0].count(",") else ","
     return pd.read_csv(io.StringIO(text), sep=separator, dtype="string", keep_default_na=False, na_values=[""])
@@ -50,6 +55,11 @@ def read_canonical(data: bytes, filename: str, mode="manual"):
     if not tables:
         raise ValueError("Канонические таблицы не найдены. Для отчётов партнёра выберите отдельный режим импорта.")
     for name, frame in tables.items():
+        if frame.empty:
+            missing = [column for column in REQUIRED[name] if column not in frame.columns]
+            if missing:
+                raise ValueError(f"{name}: для очистки пустой таблицы нужны заголовки: {', '.join(missing)}")
+        frame.attrs[_CANONICAL_TABLE] = name
         if "source_file" not in frame:
             frame["source_file"] = filename
         if "source_sheet" not in frame:
@@ -62,9 +72,10 @@ def read_canonical(data: bytes, filename: str, mode="manual"):
 
 
 def merge_tables(base, addition):
+    """Replace nonempty tables and explicitly present empty canonical imports."""
     result = base.copy()
     for name, frame in addition.tables.items():
-        if not frame.empty:
+        if not frame.empty or frame.attrs.get(_CANONICAL_TABLE) == name:
             result.tables[name] = frame.copy()
     result.notes.extend(addition.notes)
     return normalize(result)
