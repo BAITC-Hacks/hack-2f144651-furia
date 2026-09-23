@@ -56,6 +56,6 @@ def render_filters(rows):
     search = search_col.text_input("Поиск товара", placeholder="Код 1С, артикул или название", icon=":material/search:", key="order_search")
     category_filter = category_col.multiselect("Категории", categories, default=categories, placeholder="Категории", key="order_categories")
     scope_filter = scope_col.multiselect("Области склада", scopes, default=scopes, placeholder="Области склада", key="order_scopes")
-    risk = risk_col.selectbox("Уровень риска", ["Все", "Риск дефицита", "Критично", "Пополнение", "Норма", "Нужны данные", "Ручные правки"], key="order_risk", help="Критично: прогнозируемый дефицит менее чем через 7 дней. Избыток не классифицируется без согласованного порога.")
+    risk = risk_col.selectbox("Уровень риска", ["Все", "Риск дефицита", "Критично", "Пополнение", "Норма", "Нужны данные", "Риск не определён", "Ручные правки"], key="order_risk", help="Критично: прогнозируемый дефицит менее чем через 7 дней. «Риск дефицита» включает только прогнозируемый дефицит; пополнение может быть нужно для страхового запаса.")
     return filter_orders(rows, suppliers if supplier == "Все поставщики" else [supplier],
                          scope_filter, category_filter, risk, search)

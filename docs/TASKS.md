@@ -17,6 +17,7 @@
 | AUD-FE-01 / planned | Frontend, исполнитель следующего этапа не назначен | D01/D09/D10/D11/D12: локализация ошибок, склады, лёгкий rerun, кеш и тексты | [Промпт](../prompts/AUDIT_FRONTEND.md); совместный контракт D05 с Logic |
 | AUD-LOG-01 / planned | Logic, исполнитель следующего этапа не назначен | D03–D07: ключи, подписи, ручные правки и числовая устойчивость | [Промпт](../prompts/AUDIT_LOGIC.md); schema/fingerprint согласует интегратор |
 | CI-02 / done | Интегратор `/root`; Reviewer `/root/ci_review` | Временно только ручной запуск Actions по выбору пользователя | `9eb895c` опубликован; GitHub: 0 автоматических запусков/check runs/statuses. Проверки и восстановление: [CI-02](tasks/CI-02.md) |
+| UI-LOGIC-01 / in_progress | Интегратор `/root` (сессия `01a0cdfc-d3c8-7c30-82fd-b27597a5c11e`); Frontend `/root/risk_ui` | Интеграция Logic в UI; отдельное параллельное поручение | Назначение и файлы: [UI-LOGIC-01](tasks/UI-LOGIC-01.md); Git и общие документы переданы после CI-02 |
 | ROLE-01 / done | Интегратор | Единые Frontend/Backend/Logic, правила Git, стартовые инструкции и промпты | Проверены ссылки, владение и документационный diff; независимая проверка: [ROLE-01](tasks/ROLE-01.md) |
 | ARCH-01 / done | Интегратор | ekt_ui, application, AGENTS, документация; прямое внесение в main | 54 passed после переноса, smoke, pip check и браузер; см. STATUS |
 | FE-01 / done | Frontend | Модули импорта, таблиц, результатов и review внутри ekt_ui | `7cd9816`; путь демо/расчёт/утверждение покрыт AppTest |

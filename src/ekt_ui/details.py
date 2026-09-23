@@ -3,7 +3,35 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from ekt.demand import detector_status
+from ekt.schema import KEY, select
 from ekt_ui.presentation import item_deliveries, number, urgency_label
+
+
+def render_detector(calculation, bundle, row, detail):
+    sales = select(bundle["sales"], tuple(row[field] for field in KEY))
+    status = detector_status(sales, calculation.config["as_of"],
+                             enabled=calculation.config["remove_oneoffs"])
+    count, minimum = status["positive_event_count"], status["minimum_events"]
+    if status["status"] == "disabled":
+        st.info("Аномалии не проверялись: детектор выключен.")
+    elif status["status"] == "insufficient_history":
+        st.warning(f"Недостаточно истории: {count} из {minimum} событий. Требуется ручная проверка.")
+    elif detail is None or detail.get("demand") is None:
+        st.info("Эвристика применима, но результат проверки недоступен: расчёт спроса для позиции не завершён.")
+    else:
+        events = detail["demand"].events
+        applied = int(events["applied"].eq(True).sum()) if not events.empty else 0
+        st.success(f"Эвристика применима и выполнена: найдено событий — {len(events)}; применено исключений — {applied}.")
+        if events.empty:
+            st.caption("События не найдены. Пустой список не доказывает отсутствие аномалий.")
+        else:
+            with st.expander("Разовые события"):
+                st.caption("Найденное событие исключается из спроса только при applied=True. "
+                           "При applied=False исключение не применено после сверки с месячным итогом.")
+                st.dataframe(events, hide_index=True, width="stretch",
+                             column_config={"applied": st.column_config.CheckboxColumn("Исключение применено (applied)")})
+        st.caption("Это эвристическая проверка, а не гарантия отсутствия аномалий; учитывайте предупреждения движка во вкладке «Источники».")
 
 
 def demand_chart(detail):
@@ -29,7 +57,7 @@ def show_item(calculation, bundle, row_id):
     st.caption(f"{row.supplier_id} / {row.sku_1c} / {row.warehouse_scope}")
     st.subheader(row["name"])
     status = urgency_label(row, calculation.config["as_of"])
-    st.badge(status, color={"Критично": "red", "Нужны данные": "orange", "Пополнение": "blue", "Норма": "green"}[status])
+    st.badge(status, color={"Критично": "red", "Нужны данные": "orange", "Пополнение": "blue", "Норма": "green", "Риск не определён": "orange"}[status])
     category = "Не указана" if pd.isna(row.category_id) else row.category_id
     unit = "Не указана" if pd.isna(row.unit) else row.unit
     st.caption(f"Категория: {category} · Единица: {unit} · ABC/XYZ: не рассчитаны")
@@ -45,15 +73,13 @@ def show_item(calculation, bundle, row_id):
 
     demand_tab, transit_tab, source_tab = st.tabs(["Спрос и прогноз", "Поставки", "Источники"])
     with demand_tab:
+        render_detector(calculation, bundle, row, detail)
         if detail:
             st.altair_chart(demand_chart(detail), width="stretch")
             st.caption("Факт: серый · Очищенный спрос: зелёный пунктир · Месяцы с исключениями: красный")
             st.caption(f"За всю историю исключено: {number(row.get('excluded_oneoff_qty'))} {row.unit}; восстановлено: {number(row.get('imputed_lost_demand'))} {row.unit}. Эти объёмы не прибавляются повторно к прогнозу.")
             st.caption(f"Сезонность: {row.get('seasonal_source', 'Нет данных')}")
             st.line_chart(detail["forecast"].daily.rename("Прогноз"), height=180, color="#2855d9")
-            if not detail["demand"].events.empty:
-                with st.expander("Разовые события"):
-                    st.dataframe(detail["demand"].events, hide_index=True, width="stretch")
             if "balance" in detail:
                 with st.expander("Остаток без нового заказа"):
                     st.line_chart(detail["balance"].rename("Доступный остаток"), height=180, color="#df4562")

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from ekt_ui.presentation import deliveries
+from ekt_ui.presentation import deliveries, risk_statuses
 
 
 def configure_page():
@@ -29,13 +29,15 @@ def render_source(bundle, as_of):
 
 def render_kpis(calculation, bundle, as_of):
     rows = calculation.rows if calculation is not None else None
-    risk = int(rows.urgency.eq("Риск дефицита").sum()) if rows is not None else "Нет расчёта"
-    checks = int((rows.data_warnings.fillna("").ne("") | rows.recommended_qty.isna()).sum()) if rows is not None else "Нет расчёта"
+    statuses = risk_statuses(calculation) if calculation is not None else None
+    risk = int(statuses.risk_level.isin(["critical", "risk"]).sum()) if statuses is not None else "Нет расчёта"
+    checks = int((rows.data_warnings.fillna("").ne("") | statuses.calculation_status.eq("unavailable")
+                  | statuses.risk_level.eq("unknown")).sum()) if statuses is not None else "Нет расчёта"
     incoming = deliveries(bundle, as_of) if bundle is not None else None
     batches = int(incoming.delivery_state.eq("Ожидается").sum()) if incoming is not None else "Нет данных"
     cards = [
         ("risk", "Риск дефицита", risk, "Позиции с прогнозируемым отрицательным доступным остатком; каждый складской scope учитывается отдельно."),
-        ("check", "Требует перепроверки", checks, "Позиции с предупреждениями движка или незавершённым расчётом. Это не число обнаруженных аномалий."),
+        ("check", "Требует перепроверки", checks, "Позиции с предупреждениями движка, незавершённым расчётом или неопределённым риском. Это не число обнаруженных аномалий."),
         ("transit", "Партии в пути", batches, "Подтверждённые партии с ETA позже даты расчёта, включая поздние поставки. Разные единицы не суммируются."),
         ("value", "Общая сумма заказа", "Нет цен", "Закупочные цены и валюта отсутствуют в контракте. Денежная сумма не рассчитывается."),
     ]
