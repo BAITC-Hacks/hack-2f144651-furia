@@ -71,7 +71,10 @@ uv pip install --python .venv/bin/python -r requirements.lock
 .venv\Scripts\python.exe -m pip check
 ```
 
-Результаты интегрированного pytest, smoke и чистой установки — в [docs/STATUS.md](docs/STATUS.md). Актуальный backlog — в [docs/TASKS.md](docs/TASKS.md); BE-03 требует отсутствующих оригинальных архивов.
+Результат чистой локальной проверки: **208 passed**, smoke и pip check успешны;
+подробности и проверенный SHA — в [docs/STATUS.md](docs/STATUS.md). Актуальный backlog
+в [docs/TASKS.md](docs/TASKS.md): BE-03 требует оригинальных архивов; удалённый CI
+заблокирован GitHub из-за billing issue аккаунта, до выполнения шагов.
 
 CI в [GitHub Actions](https://github.com/BAITC-Hacks/hack-2f144651-furia/actions) запускает
 `.github/workflows/checks.yml` на push в main и pull request: Python 3.12, отдельная
