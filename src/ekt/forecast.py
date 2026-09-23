@@ -24,6 +24,10 @@ def robust_line(x, y):
 
 def forecast(demand, as_of, horizon, prior=None, growth=None):
     as_of = pd.Timestamp(as_of)
+    if (demand.daily.index > as_of).any() or (
+        demand.monthly.loc[demand.monthly["complete"]].index + pd.offsets.MonthEnd(0) > as_of
+    ).any():
+        raise ValueError("История построена позже cutoff: вызовите build_demand заново на дату прогноза")
     dates = pd.date_range(as_of + pd.Timedelta(days=1), periods=horizon, freq="D")
     months = demand.monthly.loc[demand.monthly["complete"]].tail(48)
     warnings = []

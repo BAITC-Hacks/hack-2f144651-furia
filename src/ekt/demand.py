@@ -23,13 +23,8 @@ def sale_quantities(sales):
     return result
 
 
-def detect_oneoffs(sales, enabled=True):
-    frame = sales.copy()
-    frame["excluded"] = 0.0
-    events = []
-    if frame.empty or not enabled:
-        return frame, pd.DataFrame(events)
-    positive = frame.loc[frame["quantity_signed"] > 0].copy()
+def _positive_events(sales):
+    positive = sales.loc[sales["quantity_signed"] > 0].copy()
     # Anonymous customer + date joins split invoices. Without customer use document,
     # and without either use source row; never invent customer identifiers.
     positive["event_key"] = [
@@ -37,6 +32,16 @@ def detect_oneoffs(sales, enabled=True):
         for i, c, d in zip(positive.index, positive["customer_id"], positive["document_id"])
     ]
     groups = positive.groupby(["date", "event_key"], as_index=False)["quantity_signed"].sum()
+    return positive, groups
+
+
+def detect_oneoffs(sales, enabled=True):
+    frame = sales.copy()
+    frame["excluded"] = 0.0
+    events = []
+    if frame.empty or not enabled:
+        return frame, pd.DataFrame(events)
+    positive, groups = _positive_events(frame)
     if len(groups) < 12:
         return frame, pd.DataFrame(events)
     values = groups["quantity_signed"].to_numpy()
@@ -45,9 +50,12 @@ def detect_oneoffs(sales, enabled=True):
     threshold = max(5 * median, median + 6 * 1.4826 * mad)
     for _, event in groups.loc[groups["quantity_signed"] > threshold].iterrows():
         quantity = event["quantity_signed"]
-        similar = groups.loc[groups["quantity_signed"].between(quantity * .65, quantity * 1.5)]
-        # Regular large customers and recurring seasonal order sizes are retained.
-        recurring = len(similar) >= 3 and (similar["date"].max() - similar["date"].min()).days >= 14
+        similar = groups.loc[groups["event_key"].eq(event["event_key"]) &
+                             groups["quantity_signed"].between(quantity * .65, quantity * 1.5)]
+        # Comparable volumes establish recurrence only for the SAME known customer.
+        # A document or row identifier cannot establish customer identity.
+        recurring = (event["event_key"].startswith("customer:") and len(similar) >= 3
+                     and (similar["date"].max() - similar["date"].min()).days >= 14)
         same_day = groups.loc[groups["date"].eq(event["date"])]
         broad_peak = (same_day["quantity_signed"] > threshold).sum() >= 3
         if recurring or broad_peak:
@@ -74,6 +82,12 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
     warnings = []
     sales = sale_quantities(sales.loc[sales["date"] <= as_of])
     monthly = monthly.loc[(monthly["month"] <= as_of) & (monthly["coverage_end"] <= as_of)].copy()
+    if remove_oneoffs:
+        _, groups = _positive_events(sales)
+        if len(groups) < 12:
+            warnings.append(f"Детектор разовых заказов неприменим: {len(groups)} < 12 положительных событий клиент/дата (без customer_id — документ/дата). Пустой список событий не доказывает отсутствие аномалий; крупные заказы остаются в спросе и требуют ручной проверки.")
+    else:
+        warnings.append("Детектор разовых заказов отключён: аномалии не проверены.")
     sales, events = detect_oneoffs(sales, remove_oneoffs)
     starts = list(sales["date"].dropna()) + list(monthly["coverage_start"].dropna())
     if not starts:

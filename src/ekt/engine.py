@@ -65,6 +65,10 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
     if errors:
         raise ValueError("\n".join(errors))
     as_of = pd.Timestamp(as_of).normalize()
+    # Knowledge filtering must precede category/supplier fallback. Otherwise a
+    # future category prior shadows an already known supplier prior.
+    prior_bundle = Bundle({"seasonal_prior": bundle["seasonal_prior"].loc[
+        bundle["seasonal_prior"]["known_as_of"].le(as_of)]}, mode=bundle.mode)
     config = {"as_of": as_of.date().isoformat(), "remove_oneoffs": remove_oneoffs, "compensate": compensate}
     digest = fingerprint(bundle, config)
     rows, details = [], {}
@@ -111,7 +115,7 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
                 if intervals.empty:
                     warnings.append("Подтверждённых stockout-интервалов нет: упущенный спрос не добавлен")
                 demand = build_demand(sales, monthly, intervals, as_of, remove_oneoffs, compensate)
-                prediction = forecast(demand, as_of, horizon, scoped_optional(bundle, "seasonal_prior", product), scoped_optional(bundle, "growth_plan", product))
+                prediction = forecast(demand, as_of, horizon, scoped_optional(prior_bundle, "seasonal_prior", product), scoped_optional(bundle, "growth_plan", product))
                 warnings += demand.warnings + prediction.warnings
                 detail = {"demand": demand, "forecast": prediction, "policy": policy.to_dict()}
                 details[row_id] = detail
