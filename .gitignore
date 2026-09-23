@@ -1,0 +1,16 @@
+.venv/
+.venv-verify/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+source-materials/
+data/raw/
+data/private/
+exports/
+work/
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.log
