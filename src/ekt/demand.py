@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+_MINIMUM_EVENTS = 12
+
 
 @dataclass
 class DemandResult:
@@ -35,6 +37,24 @@ def _positive_events(sales):
     return positive, groups
 
 
+def detector_status(sales, as_of, enabled=True):
+    """Applicability for canonical sales of ONE supplier/SKU/warehouse at cutoff.
+
+    Count positive customer/date groups (document/date fallback), not invoice
+    rows or detected anomalies. Evaluated means eligible, not proven anomaly-free.
+    Monthly-only history cannot establish invoice detector applicability.
+    """
+    cutoff = pd.Timestamp(as_of)
+    if pd.isna(cutoff):
+        raise ValueError("Нужна дата оценки применимости детектора")
+    cutoff = cutoff.normalize()
+    history = sale_quantities(sales.loc[sales["date"] <= cutoff])
+    _, groups = _positive_events(history)
+    count = len(groups)
+    status = "disabled" if not enabled else "insufficient_history" if count < _MINIMUM_EVENTS else "evaluated"
+    return {"status": status, "positive_event_count": count, "minimum_events": _MINIMUM_EVENTS}
+
+
 def detect_oneoffs(sales, enabled=True):
     frame = sales.copy()
     frame["excluded"] = 0.0
@@ -42,7 +62,7 @@ def detect_oneoffs(sales, enabled=True):
     if frame.empty or not enabled:
         return frame, pd.DataFrame(events)
     positive, groups = _positive_events(frame)
-    if len(groups) < 12:
+    if len(groups) < _MINIMUM_EVENTS:
         return frame, pd.DataFrame(events)
     values = groups["quantity_signed"].to_numpy()
     median = np.median(values)
@@ -82,11 +102,10 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
     warnings = []
     sales = sale_quantities(sales.loc[sales["date"] <= as_of])
     monthly = monthly.loc[(monthly["month"] <= as_of) & (monthly["coverage_end"] <= as_of)].copy()
-    if remove_oneoffs:
-        _, groups = _positive_events(sales)
-        if len(groups) < 12:
-            warnings.append(f"Детектор разовых заказов неприменим: {len(groups)} < 12 положительных событий клиент/дата (без customer_id — документ/дата). Пустой список событий не доказывает отсутствие аномалий; крупные заказы остаются в спросе и требуют ручной проверки.")
-    else:
+    applicability = detector_status(sales, as_of, remove_oneoffs)
+    if applicability["status"] == "insufficient_history":
+        warnings.append(f"Детектор разовых заказов неприменим: {applicability['positive_event_count']} < {_MINIMUM_EVENTS} положительных событий клиент/дата (без customer_id — документ/дата). Пустой список событий не доказывает отсутствие аномалий; крупные заказы остаются в спросе и требуют ручной проверки.")
+    elif applicability["status"] == "disabled":
         warnings.append("Детектор разовых заказов отключён: аномалии не проверены.")
     sales, events = detect_oneoffs(sales, remove_oneoffs)
     starts = list(sales["date"].dropna()) + list(monthly["coverage_start"].dropna())
@@ -112,7 +131,7 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
         daily.loc[by_day.index, "raw"] = by_day["quantity_signed"]
         daily.loc[by_day.index, "excluded"] = by_day["excluded"]
         warnings.append("Дни между первой и последней накладной без строк считаются нулевыми; полнота выгрузки должна быть подтверждена.")
-    unapplied_months = []
+    unapplied_dates = pd.DatetimeIndex([])
     for row in monthly.itertuples():
         span = pd.date_range(row.coverage_start, row.coverage_end)
         span = span.intersection(index)
@@ -135,12 +154,13 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
             daily.loc[span, "excluded"] = 0.0
             if not details.empty:
                 warnings.append(f"{row.month:%Y-%m}: месячный итог {row.qty_net:g} не сходится с накладными {details.quantity_signed.sum():g}; используется только месячный итог, выбросы из накладных не вычитаются.")
-                unapplied_months.append(row.month.to_period("M"))
+                unapplied_dates = unapplied_dates.union(span)
             else:
                 warnings.append("Дневной ряд из месячных итогов распределён равномерно по доступным дням; дневная детализация отсутствует.")
         daily.loc[span, "covered"] = True
     if not events.empty:
-        events["applied"] = ~events["date"].dt.to_period("M").isin(unapplied_months)
+        # Partial monthly coverage overrides only those dates, not the whole month.
+        events["applied"] = ~events["date"].isin(unapplied_dates)
     daily["regular"] = daily["raw"] - daily["excluded"]
     if daily["stockout"].any() and not (daily["covered"] & ~daily["stockout"]).any():
         raise ValueError("Спрос не идентифицируется: нет наблюдаемых дней доступности товара")

@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from ekt.demand import build_demand, detect_oneoffs
+from ekt.demand import build_demand, detect_oneoffs, detector_status
 
 
 def large_events(bundle, customers, dates=("2026-01-01", "2026-01-11", "2026-01-21")):
@@ -71,3 +71,76 @@ def test_future_visits_cannot_establish_recurrence_at_cutoff(make_bundle):
     assert early.daily.excluded.sum() == 2000
     assert later.daily.excluded.sum() == 0
     assert early.daily.index.max() == pd.Timestamp("2026-01-15")
+
+
+def test_partial_month_reconciliation_only_disables_events_inside_coverage(make_bundle):
+    from ekt.schema import SCHEMAS, normalize
+
+    bundle = make_bundle("2026-01-01", "2026-01-31")
+    bundle.tables["sales"] = large_events(bundle, ["one", "two"], ["2026-01-05", "2026-01-20"])
+    bundle.tables["monthly_sales"] = pd.DataFrame([
+        ["S", "000001_", "W", "2026-01-01", 200, False, "2026-01-01", "2026-01-10"]
+    ], columns=SCHEMAS["monthly_sales"])
+    bundle = normalize(bundle)
+    result = build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-01-31")
+    # 200 authoritative units on days 1–10, 21*10 + 1000 on days 11–31.
+    assert result.daily.raw.sum() == 1410
+    assert result.daily.excluded.sum() == 1000
+    assert result.daily.corrected.sum() == 410
+    assert result.events.set_index("date")["applied"].to_dict() == {
+        pd.Timestamp("2026-01-05"): False, pd.Timestamp("2026-01-20"): True}
+    assert result.events.loc[result.events.applied, "quantity"].sum() == 1000
+
+
+@pytest.mark.parametrize("count, enabled, status", [
+    (11, True, "insufficient_history"), (12, True, "evaluated"),
+    (11, False, "disabled"), (12, False, "disabled"),
+])
+def test_detector_applicability_api_cutoff_and_warning_agree(make_bundle, count, enabled, status):
+    bundle = make_bundle("2026-01-01", "2026-01-20")
+    sales = pd.concat([bundle["sales"], bundle["sales"]], ignore_index=True)
+    before = sales.copy(deep=True)
+    cutoff = f"2026-01-{count:02d}"
+    assert detector_status(sales, cutoff, enabled) == {
+        "status": status, "positive_event_count": count, "minimum_events": 12}
+    result = build_demand(sales, bundle["monthly_sales"], bundle["stockouts"], cutoff, remove_oneoffs=enabled)
+    assert result.events.empty
+    assert any("неприменим" in w for w in result.warnings) == (status == "insufficient_history")
+    assert any("отключён" in w for w in result.warnings) == (status == "disabled")
+    pd.testing.assert_frame_equal(sales, before)
+
+
+def test_detector_applicability_excludes_returns_and_uses_document_fallback(make_bundle):
+    sales = make_bundle("2026-01-01", "2026-01-12")["sales"].copy()
+    sales.loc[0, "document_type"] = "return"  # Positive explicit return is not a positive event.
+    sales.loc[1, "quantity_signed"] = 0
+    sales.loc[2, "quantity_signed"] = -5
+    sales["customer_id"] = None
+    sales = pd.concat([sales, sales], ignore_index=True)
+    assert detector_status(sales, "2026-01-12")["positive_event_count"] == 9
+    assert detector_status(sales.iloc[:0], "2026-01-12") == {
+        "status": "insufficient_history", "positive_event_count": 0, "minimum_events": 12}
+
+
+def test_demand_analytics_conservation_with_events_partial_sales_and_overlapping_stockouts(make_bundle):
+    from ekt.forecast import forecast
+    from ekt.schema import SCHEMAS, normalize
+
+    bundle = make_bundle("2026-01-01", "2026-01-31")
+    bundle.tables["sales"] = large_events(bundle, ["oneoff"], ["2026-01-15"])
+    bundle["sales"].loc[bundle["sales"].date.eq("2026-01-21"), "quantity_signed"] = 4
+    bundle["sales"].loc[bundle["sales"].date.eq("2026-01-22"), "quantity_signed"] = 0
+    bundle.tables["stockouts"] = pd.DataFrame([
+        ["S", "000001_", "W", "2026-01-21", "2026-01-22", "confirmed"],
+        ["S", "000001_", "W", "2026-01-22", "2026-01-22", "overlap"],
+    ], columns=SCHEMAS["stockouts"])
+    bundle = normalize(bundle)
+    result = build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-01-31")
+    assert result.daily.raw.sum() == 1294
+    assert result.daily.excluded.sum() == 1000
+    assert result.events.loc[result.events.applied, "quantity"].sum() == 1000
+    assert result.daily.imputed.sum() == 16  # (10 - 4) + (10 - 0), overlap counted once.
+    assert result.daily.corrected.sum() == 310
+    for name, expected in [("raw", 1294), ("excluded", 1000), ("imputed", 16), ("corrected", 310)]:
+        assert result.monthly[name].sum() == expected
+    assert forecast(result, "2026-01-31", 7).daily.sum() == pytest.approx(70)
