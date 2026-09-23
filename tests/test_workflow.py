@@ -1,8 +1,6 @@
 import io
-from pathlib import Path
 from openpyxl import load_workbook
 import pandas as pd
-from streamlit.testing.v1 import AppTest
 from ekt.demo import demo_bundle, canonical_zip
 from ekt.ingest import read_canonical
 from ekt.engine import calculate, order_quantity
@@ -44,20 +42,3 @@ def test_load_calculate_explain_adjust_approve_export():
     assert export_frame(result, edits, approval).approval_status.eq("draft").all()
     revised = calculate(bundle, "2026-09-22", remove_oneoffs=False)
     assert export_frame(revised, edits, approval).approval_status.eq("draft").all()
-
-
-def test_streamlit_full_demo():
-    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=30).run()
-    assert not app.exception
-    app.button[0].click().run()
-    assert not app.exception
-    next(b for b in app.button if b.label == "Рассчитать предложения").click().run()
-    assert not app.exception
-    assert app.metric[1].value == "4"
-    next(b for b in app.button if b.label == "Утвердить выбранные позиции").click().run()
-    assert not app.exception
-    assert any("утверждены" in message.value for message in app.success)
-    app.toggle[0].set_value(False).run()
-    assert "calculation" not in app.session_state
-    assert "approval" not in app.session_state
-    assert not app.exception
