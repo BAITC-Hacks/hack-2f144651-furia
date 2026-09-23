@@ -71,7 +71,23 @@ uv pip install --python .venv/bin/python -r requirements.lock
 .venv\Scripts\python.exe -m pip check
 ```
 
-Текущий результат на main: **54 passed** после интеграции разделения слоёв и командных тестов схемы. Smoke и clean-install сведения — в [docs/STATUS.md](docs/STATUS.md).
+Результаты интегрированного pytest, smoke и чистой установки — в [docs/STATUS.md](docs/STATUS.md). Актуальный backlog — в [docs/TASKS.md](docs/TASKS.md); BE-03 требует отсутствующих оригинальных архивов.
+
+CI в [GitHub Actions](https://github.com/BAITC-Hacks/hack-2f144651-furia/actions) запускает
+`.github/workflows/checks.yml` на push в main и pull request: Python 3.12, отдельная
+чистая `.venv` Windows/Linux, установка requirements.lock, pip check, все тесты,
+smoke и синтетический walk-forward. Workflow имеет только contents:read,
+версии checkout/setup-python закреплены SHA; секреты и партнёрские архивы не нужны.
+Использование actions соответствует [документации GitHub](https://docs.github.com/en/actions/tutorials/build-and-test-code/python).
+
+Локальная воспроизводимая оценка:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.evaluate_forecast --demo --output work/evaluation.json
+```
+
+Результаты относятся к синтетике. Ограничения знания во времени, MAE/WAPE и stockout
+описаны в [методологии](docs/METHODOLOGY.md).
 
 ## Возможности
 

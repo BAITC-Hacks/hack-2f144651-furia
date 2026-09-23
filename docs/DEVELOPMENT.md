@@ -65,7 +65,7 @@ docs/kit не является текущим backlog. Например, исх�
 |---|---|---|
 | import_canonical_files | пары (filename, bytes), mode, optional previous Bundle | новый Bundle |
 | replace_supplier | previous или None, incoming Bundle, supplier | новый Bundle; другие partner-поставщики сохранены |
-| edit_table | Bundle, имя таблицы, DataFrame без provenance | новый Bundle; неизменённые позиционные строки сохраняют источник |
+| edit_table | Bundle, имя таблицы, DataFrame без provenance | новый Bundle; однозначно совпадающие неизменённые строки сохраняют источник независимо от позиции |
 | calculate | Bundle, as_of, remove_oneoffs, compensate | Calculation: rows, details, fingerprint, config |
 | initial_edits / approve | rows / Calculation и edits | DataFrame правок / Approval |
 | export_frame | Calculation, edits, optional Approval | выбранные строки со статусом draft/approved |
@@ -112,10 +112,13 @@ feat(logic): ..., refactor(architecture): ..., test(integration): ..., docs(dev)
 нормализации MOQ), затем merge `98333ed` добавил командные инструкции и тесты схемы.
 Разделение слоёв перенесено в main отдельным коммитом после них. Описание точного
 SHA и фактических тестов текущей ревизии находится в STATUS/VERIFICATION.
-## Ограничения
+## Интегрированные доработки и ограничения
 
-- Экран теперь в отдельной папке, но пока в одном модуле: дробление по сценариям FE-01.
-- Provenance редактора сохраняется по позиции строки: устойчивые ключи BE-02.
-- merge_tables заменяет только непустые таблицы: явная очистка через импорт BE-01.
-- В исходном проекте нет CI: отдельная задача INT-01.
-- Реальные архивы, постоянный журнал, многопользовательский режим и интеграция 1С не проверены.
+- FE-01/02: UI разделён на imports/inputs/results/review/state; ошибка импорта сохраняет прежний набор.
+- BE-01/02: явно присутствующий пустой импорт очищает таблицу; источник сохраняется по однозначному содержимому, а не позиции.
+- LOG-01/02: воспроизводимая оценка прогноза и строгая идентичность строк правок.
+- D1/D2/D3: видимые конфликты месячных источников, корректные ETA и строгие числовые входы.
+- INT-01: `.github/workflows/checks.yml`, Python 3.12, чистая среда Windows/Linux,
+  locked install, pytest, smoke, pip check и синтетическая оценка. Фактические результаты в STATUS.
+- Реальные архивы (BE-03/D4) отсутствуют. Постоянный журнал, многопользовательский режим
+  и интеграция 1С остаются ограничениями MVP, отдельные согласованные задачи на них не выдавались.
