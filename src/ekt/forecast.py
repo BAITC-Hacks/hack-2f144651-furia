@@ -34,7 +34,7 @@ def forecast(demand, as_of, horizon, prior=None, growth=None):
         if not selected.empty:
             selected = selected.loc[selected["known_as_of"].eq(selected["known_as_of"].max())]
             if len(selected) == 12:
-                factors = selected.sort_values("month_of_year")["factor"].to_numpy(dtype=float)
+                factors = selected.sort_values("month_of_year")["factor"].to_numpy(dtype=float, copy=True)
                 factors /= factors.mean()
                 seasonal_source = "Внешний prior: " + str(selected.iloc[0]["source"])
     counts = pd.Series(months.index.month).value_counts()

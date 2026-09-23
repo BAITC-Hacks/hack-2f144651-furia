@@ -34,7 +34,14 @@ def policy_for(bundle, product):
     selected = category if not category.empty else fallback
     if selected.empty:
         raise ValueError("Нет политики поставщика/категории: задайте срок поставки, период пересмотра, страховой запас и кратность")
-    return selected.iloc[0]
+    policy = selected.iloc[0].copy()
+    if pd.notna(getattr(product, "unconfirmed_moq", None)):
+        raise ValueError("Не подтверждена семантика MOQ товара: minimum или multiple; уточните и обновите товар")
+    for field in ["min_order_qty", "order_multiple"]:
+        value = getattr(product, field, None)
+        if value is not None and pd.notna(value):
+            policy[field] = float(value)
+    return policy
 
 
 def scoped_optional(bundle, name, product):
@@ -78,6 +85,8 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
                     raise ValueError("Область склада не подтверждена: задайте warehouse_scope явно, не размножая общий остаток")
                 if pd.isna(product.unit):
                     raise ValueError("Неизвестна базовая единица товара")
+                if pd.isna(product.category_id):
+                    warnings.append("Категория не предоставлена; применима только явная политика поставщика")
                 policy = policy_for(bundle, product)
                 horizon = int(policy.lead_time_days + policy.review_days)
                 assumptions.append(f"Политика {policy.origin}: L={policy.lead_time_days:g}, R={policy.review_days:g}, safety={policy.safety_days:g}, MOQ={policy.min_order_qty:g}, кратность={policy.order_multiple:g}")
@@ -113,6 +122,12 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
                 if available < 0:
                     warnings.append("Отрицательный доступный остаток увеличивает потребность; проверьте учёт")
                 inbound = select(bundle["inbound"], key)
+                if "qty_source_unit" in inbound:
+                    unconverted = inbound["qty_base_unit"].isna() & pd.to_numeric(inbound["qty_source_unit"], errors="coerce").ne(0) & ~inbound["status"].eq("cancelled")
+                    if unconverted.any():
+                        raise ValueError("Не подтверждены единицы пути: задайте количество в базовой единице для каждой партии")
+                if inbound["status"].eq("pending").any():
+                    warnings.append("Неподтверждённые партии pending не вычтены из потребности")
                 active = inbound.loc[inbound["status"].eq("confirmed")]
                 end = as_of + pd.Timedelta(days=horizon)
                 on_time = active.loc[active["eta"].gt(as_of) & active["eta"].le(end)]

@@ -27,7 +27,7 @@ REQUIRED = {
     "sales": KEY + ["date", "quantity_signed", "unit", "document_type"],
     "monthly_sales": KEY + ["month", "qty_net", "is_complete", "coverage_start", "coverage_end"],
     "stock_snapshots": KEY + ["as_of", "snapshot_kind"],
-    "inbound": KEY + ["order_id", "qty_base_unit", "status"],
+    "inbound": KEY + ["order_id", "status"],
     "stockouts": KEY + ["start_date", "end_date", "evidence"],
     "policies": ["supplier_id", "lead_time_days", "review_days", "safety_days", "min_order_qty", "order_multiple", "origin"],
     "growth_plan": ["supplier_id", "start_date", "end_date", "extra_growth_rate", "source"],
@@ -153,6 +153,8 @@ def validate(bundle: Bundle) -> list[str]:
         errors.append("growth_plan: снижение ниже −100% недопустимо")
     if (bundle["inbound"]["qty_base_unit"] < 0).any():
         errors.append("inbound: отрицательное количество")
+    if (bundle["inbound"]["status"].eq("confirmed") & bundle["inbound"]["qty_base_unit"].isna()).any():
+        errors.append("inbound: у подтверждённой партии должно быть qty_base_unit")
     if not bundle["inbound"]["status"].isin(["confirmed", "pending", "cancelled"]).all():
         errors.append("inbound.status: confirmed/pending/cancelled")
     prior = bundle["seasonal_prior"]

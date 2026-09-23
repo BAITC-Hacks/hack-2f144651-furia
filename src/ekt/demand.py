@@ -128,6 +128,8 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
     if not events.empty:
         events["applied"] = ~events["date"].dt.to_period("M").isin(unapplied_months)
     daily["regular"] = daily["raw"] - daily["excluded"]
+    if daily["stockout"].any() and not (daily["covered"] & ~daily["stockout"]).any():
+        raise ValueError("Спрос не идентифицируется: нет наблюдаемых дней доступности товара")
     if (daily["regular"] < 0).any():
         warnings.append("Отрицательный чистый спрос (возвраты) сохранён в истории; итоговый прогноз ограничен снизу нулём.")
     daily["imputed"] = 0.0

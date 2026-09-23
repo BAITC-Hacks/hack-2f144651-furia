@@ -7,6 +7,7 @@ import streamlit as st
 from ekt.demo import demo_bundle, canonical_zip, DEMO_DATE
 from ekt.schema import Bundle, SCHEMAS, PROVENANCE, normalize, validate, fingerprint
 from ekt.ingest import read_canonical, merge_tables
+from ekt.partner import read_partner
 from ekt.engine import calculate
 from ekt.review import initial_edits, approve, export_frame, review_signature
 from ekt.export import csv_bytes, xlsx_bytes
@@ -32,6 +33,11 @@ def cached_import(data, name, mode):
     return read_canonical(data, name, mode)
 
 
+@st.cache_data(show_spinner=False)
+def cached_partner(data, name, supplier, report_date, scope, meaning, base_units):
+    return read_partner(data, name, supplier, report_date, scope, meaning, base_units)
+
+
 def load_bundle(bundle):
     st.session_state.bundle = bundle
     st.session_state.version = st.session_state.get("version", 0) + 1
@@ -51,12 +57,38 @@ with st.sidebar:
             load_bundle(cached_demo())
         st.download_button("Скачать демо для импорта", canonical_zip(cached_demo()), "synthetic_demo.zip", "application/zip", width="stretch")
     else:
+        import_kind = st.selectbox("Формат", ["Канонические таблицы", "Отчёты IEK / Systeme"])
+        if import_kind == "Отчёты IEK / Systeme":
+            st.caption("Адаптеры по аудиту; пока проверены только на макетах. Загрузите весь ZIP одного поставщика.")
+            supplier = st.selectbox("Поставщик архива", ["IEK", "Systeme"])
+            report_date = st.date_input("Дата выгрузки", DEMO_DATE.date())
+            scope_confirmed = st.checkbox("Подтверждаю единую область всех отчётов и складов", value=False)
+            scope_name = st.text_input("Название общей области", value="", disabled=not scope_confirmed)
+            base_units = st.checkbox("Количество всех партий пути уже в базовых единицах", value=False)
+            meaning = st.selectbox("Поле MOQ IEK означает", ["unknown", "minimum", "multiple"], format_func=lambda x: {"unknown": "Не подтверждено", "minimum": "Минимальное количество", "multiple": "Кратность"}[x]) if supplier == "IEK" else "multiple"
+            partner_upload = st.file_uploader("ZIP поставщика или один XLSX", type=["zip", "xlsx"])
+            if st.button("Импортировать отчёты", disabled=partner_upload is None, width="stretch"):
+                try:
+                    if scope_confirmed and not scope_name.strip():
+                        raise ValueError("Введите название подтверждённой общей области")
+                    incoming = cached_partner(partner_upload.getvalue(), partner_upload.name, supplier, report_date, scope_name if scope_confirmed else None, meaning, base_units)
+                    previous = st.session_state.get("bundle")
+                    if previous is not None and previous.mode == "partner":
+                        for table_name in SCHEMAS:
+                            retained = previous[table_name].loc[~previous[table_name].supplier_id.eq(supplier)]
+                            incoming.tables[table_name] = pd.concat([retained, incoming[table_name]], ignore_index=True)
+                        incoming.notes = list(dict.fromkeys(previous.notes + incoming.notes))
+                    load_bundle(normalize(incoming))
+                    st.success("Отчёты прочитаны. Проверьте ограничения и задайте недостающие параметры.")
+                except Exception as exc:
+                    st.error(f"Ошибка импорта: {exc}")
         mode_label = st.selectbox("Происхождение", ["Ручные / тестовые входы", "Данные партнёра", "Синтетические данные"])
         mode = {"Ручные / тестовые входы": "manual", "Данные партнёра": "partner", "Синтетические данные": "synthetic"}[mode_label]
-        files = st.file_uploader("Канонические ZIP, XLSX или CSV", type=["zip", "xlsx", "csv"], accept_multiple_files=True)
+        files = st.file_uploader("Канонические ZIP, XLSX или CSV", type=["zip", "xlsx", "csv"], accept_multiple_files=True, help="Можно добавить недостающие таблицы после импорта отчётов. Каждая загружаемая таблица заменяет одноимённую целиком.")
+        append = st.checkbox("Дополнить текущий набор (заменить только загружаемые таблицы)", value=False)
         if st.button("Загрузить файлы", width="stretch", disabled=not files):
             try:
-                combined = Bundle(mode=mode)
+                combined = st.session_state.bundle.copy() if append and "bundle" in st.session_state else Bundle(mode=mode)
                 for uploaded in files:
                     combined = merge_tables(combined, cached_import(uploaded.getvalue(), uploaded.name, mode))
                 load_bundle(combined)
@@ -97,7 +129,7 @@ with st.expander("Входные таблицы и ручные параметр
     name = st.selectbox("Таблица для просмотра и изменения", list(labels), format_func=lambda x: labels[x])
     st.caption(f"{name}: {len(bundle[name]):,} строк. Пропуск значения отличается от нуля.")
     frame = bundle[name]
-    editable = frame[SCHEMAS[name]].copy()
+    editable = frame[[col for col in frame.columns if col not in PROVENANCE]].copy()
     if len(frame) <= 15000:
         with st.form(f"inputs_{version}_{name}"):
             changed = st.data_editor(editable, num_rows="dynamic", width="stretch", key=f"data_{version}_{name}")
@@ -108,6 +140,10 @@ with st.expander("Входные таблицы и ручные параметр
                 # Preserve provenance only for rows that are unchanged; edits are explicit manual input.
                 for col in PROVENANCE:
                     changed[col] = "manual" if col in ["source_file", "data_mode"] else name if col == "source_sheet" else ""
+                for i in range(min(len(changed), len(frame))):
+                    if changed.loc[i, editable.columns].equals(editable.iloc[i]):
+                        for col in PROVENANCE:
+                            changed.loc[i, col] = frame.iloc[i][col]
                 updated.tables[name] = changed
                 load_bundle(normalize(updated))
                 st.rerun()
