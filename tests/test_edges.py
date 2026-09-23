@@ -10,6 +10,8 @@ from ekt.engine import calculate, order_quantity
 from ekt.ingest import read_canonical, parse_csv
 from ekt.export import csv_bytes, xlsx_bytes
 from ekt.review import initial_edits, approve
+from ekt.demand import build_demand
+from ekt.forecast import forecast
 
 
 def test_no_double_count_of_monthly_and_invoices():
@@ -123,3 +125,74 @@ def test_archive_paths_and_mode_are_checked():
         read_canonical(data.getvalue(), "input.zip")
     with pytest.raises(ValueError, match="Синтетический"):
         read_canonical(canonical_zip(demo_bundle()), "demo.zip", "partner")
+
+
+def test_all_stockout_without_observed_availability_is_unknown(make_bundle):
+    bundle = make_bundle("2026-06-01", "2026-06-30", rate=0)
+    bundle.tables["stockouts"] = pd.DataFrame([["S", "000001_", "W", "2026-06-01", "2026-06-30", "confirmed"]], columns=SCHEMAS["stockouts"])
+    row = calculate(bundle, "2026-06-30").rows.iloc[0]
+    assert pd.isna(row.recommended_qty)
+    assert "не идентифицируется" in row.explanation
+
+
+def test_global_stock_not_repeated_on_each_warehouse(make_bundle):
+    bundle = make_bundle()
+    other = bundle["sales"].copy()
+    other["warehouse_scope"] = "W2"
+    bundle.tables["sales"] = pd.concat([bundle["sales"], other], ignore_index=True)
+    bundle["stock_snapshots"]["warehouse_scope"] = "ALL_CONFIRMED"
+    rows = calculate(bundle, "2026-08-31").rows
+    assert rows.recommended_qty.isna().all()
+    assert set(rows.warehouse_scope) == {"W", "W2", "ALL_CONFIRMED"}
+
+
+def test_old_stock_snapshots_are_not_added(make_bundle):
+    bundle = make_bundle()
+    previous = bundle["stock_snapshots"].copy()
+    previous["as_of"] = pd.Timestamp("2026-08-01")
+    previous["available"] = 10000
+    bundle.tables["stock_snapshots"] = pd.concat([bundle["stock_snapshots"], previous], ignore_index=True)
+    assert calculate(bundle, "2026-08-31").rows.iloc[0].available_stock == 0
+
+
+def test_monthly_mismatch_retains_authoritative_aggregate(make_bundle):
+    bundle = make_bundle("2026-06-01", "2026-06-30")
+    bundle["sales"].loc[10, "quantity_signed"] = 1000
+    bundle.tables["monthly_sales"] = pd.DataFrame([["S", "000001_", "W", "2026-06-01", 300, True, "2026-06-01", "2026-06-30"]], columns=SCHEMAS["monthly_sales"])
+    result = calculate(bundle, "2026-06-30")
+    row = result.rows.iloc[0]
+    assert row.regular_demand == pytest.approx(300)
+    assert row.excluded_oneoff_qty == 0
+    assert "не сходится" in row.data_warnings
+    assert not result.details[row.row_id]["demand"].events.applied.any()
+
+
+def test_future_seasonal_prior_is_not_available_in_backtest(make_bundle):
+    bundle = make_bundle("2026-06-01", "2026-06-30")
+    demand = build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-06-30")
+    prior = pd.DataFrame({"month_of_year": range(1, 13), "factor": [1] * 6 + [10] + [1] * 5, "known_as_of": pd.Timestamp("2026-07-01"), "source": "future"})
+    before = forecast(demand, "2026-06-30", 10)
+    after = forecast(demand, "2026-06-30", 10, prior)
+    np.testing.assert_allclose(before.daily, after.daily)
+
+
+def test_overlapping_growth_plans_block_ambiguous_forecast(make_bundle):
+    bundle = make_bundle()
+    plan = ["S", "000001_", None, "2026-09-01", "2026-09-30", .1, "manual"]
+    bundle.tables["growth_plan"] = pd.DataFrame([plan, plan], columns=SCHEMAS["growth_plan"])
+    row = calculate(bundle, "2026-08-31").rows.iloc[0]
+    assert pd.isna(row.recommended_qty)
+    assert "Пересекаются" in row.explanation
+
+
+def test_fractional_meter_quantities_not_forced_to_integer():
+    assert order_quantity(1.23, 0, 0, 0, .1) == (1.23, 1.3)
+
+
+def test_unknown_unit_conversion_blocks_order(make_bundle):
+    bundle = make_bundle()
+    bundle.tables["inbound"] = pd.DataFrame([dict(supplier_id="S", sku_1c="000001_", warehouse_scope="W", order_id="P", qty_base_unit=None,
+        qty_source_unit=3, eta="2026-09-03", eta_kind="expected", status="pending")])
+    row = calculate(bundle, "2026-08-31").rows.iloc[0]
+    assert pd.isna(row.recommended_qty)
+    assert "единицы пути" in row.explanation
