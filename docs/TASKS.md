@@ -17,6 +17,7 @@
 | FE-01 / done | Frontend | Модули импорта, таблиц, результатов и review внутри ekt_ui | `7cd9816`; путь демо/расчёт/утверждение покрыт AppTest |
 | FE-02 / done | Frontend | ekt_ui, tests/frontend: сообщения ошибок и покрытия импорта | `7cd9816`; при ошибке прежний набор не теряется |
 | FE-03 / done | Frontend + интегратор | Dashboard: KPI, фильтры, таблица правок, аналитика, контроль данных, поставки | Поведенческие тесты и desktop/mobile; см. STATUS и DASHBOARD |
+| FE-04 / done | Frontend + интегратор, Codex | Уточнение дизайна через Inspo: тема, группировка, виды таблицы и сброс фильтров | Назначение, база, файлы, тесты и ограничения: [handoff Frontend](handoffs/frontend.md) |
 | BE-01 / done | Backend | ingest, application, tests/backend, INPUT_GUIDE: очистка пустым импортом | `654623f`; пустой inbound очищается, отсутствующие sales сохраняются |
 | BE-02 / done | Backend | application, tests/backend: устойчивое сопоставление строк | `654623f`; перестановки/удаления/неоднозначные дубли не присваивают чужой источник |
 | BE-03 / blocked (сверка выполнена с замечаниями) | Backend / владелец данных | partner, opt-in tests, DATA_LIMITATIONS: сверка реальных архивов | `af32ab3`; ошибки MOQ/количеств IEK, конфликт кратности Systeme, неподтверждённые бизнес-входы; см. handoffs/backend.md |
