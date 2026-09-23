@@ -41,6 +41,9 @@ def policy_for(bundle, product):
         value = getattr(product, field, None)
         if value is not None and pd.notna(value):
             policy[field] = float(value)
+    source = getattr(product, "quantity_rule_source", None)
+    if source is not None and pd.notna(source):
+        policy["origin"] = str(policy["origin"]) + "; правило количества: " + str(source)
     return policy
 
 
@@ -65,12 +68,20 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
     config = {"as_of": as_of.date().isoformat(), "remove_oneoffs": remove_oneoffs, "compensate": compensate}
     digest = fingerprint(bundle, config)
     rows, details = [], {}
+    # Partition large tables once instead of scanning all sales per product.
+    partitions = {}
+    scopes_by_product = {}
+    for name in ["sales", "monthly_sales", "stock_snapshots", "inbound", "stockouts"]:
+        partitions[name] = {tuple(key): frame for key, frame in bundle[name].groupby(KEY, dropna=False, sort=False)}
+        if name in ["sales", "monthly_sales", "stock_snapshots"]:
+            for supplier, sku, scope in partitions[name]:
+                scopes_by_product.setdefault((supplier, sku), set()).add(scope)
+
+    def group(name, key):
+        return partitions[name].get(key, bundle[name].iloc[0:0]).copy()
+
     for product in bundle["products"].itertuples():
-        scopes = set()
-        for name in ["sales", "monthly_sales", "stock_snapshots"]:
-            frame = bundle[name]
-            same = frame["supplier_id"].eq(product.supplier_id) & frame["sku_1c"].eq(product.sku_1c)
-            scopes.update(frame.loc[same, "warehouse_scope"].dropna().tolist())
+        scopes = scopes_by_product.get((product.supplier_id, product.sku_1c), set())
         for scope in sorted(scopes or ["UNSPECIFIED"]):
             key = (product.supplier_id, product.sku_1c, scope)
             row_id = hashlib.sha256("|".join(key).encode()).hexdigest()[:16]
@@ -90,11 +101,11 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
                 policy = policy_for(bundle, product)
                 horizon = int(policy.lead_time_days + policy.review_days)
                 assumptions.append(f"Политика {policy.origin}: L={policy.lead_time_days:g}, R={policy.review_days:g}, safety={policy.safety_days:g}, MOQ={policy.min_order_qty:g}, кратность={policy.order_multiple:g}")
-                sales = select(bundle["sales"], key)
+                sales = group("sales", key)
                 if not sales.empty and not sales["unit"].eq(product.unit).all():
                     raise ValueError("Единицы продаж и товара различаются: требуется явная конверсия до импорта")
-                monthly = select(bundle["monthly_sales"], key)
-                intervals = select(bundle["stockouts"], key)
+                monthly = group("monthly_sales", key)
+                intervals = group("stockouts", key)
                 if sales["customer_id"].dropna().empty:
                     warnings.append("customer_id отсутствует: клиентские выбросы не проверены")
                 if intervals.empty:
@@ -108,7 +119,7 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
                            excluded_oneoff_qty=float(demand.daily.excluded.sum()), imputed_lost_demand=float(demand.daily.imputed.sum()),
                            expected_demand_horizon=float(prediction.daily.sum()), seasonal_source=prediction.seasonal_source,
                            trend_per_month=prediction.slope_per_month, training_end=prediction.training_end)
-                stock = select(bundle["stock_snapshots"], key)
+                stock = group("stock_snapshots", key)
                 stock = stock.loc[stock["as_of"].eq(as_of) & stock["snapshot_kind"].eq("current")]
                 if stock.empty:
                     raise ValueError(f"Нет подтверждённого текущего остатка на {as_of:%Y-%m-%d}; исторический остаток не подставлен")
@@ -121,7 +132,9 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
                     raise ValueError("Нужен доступный остаток либо on_hand и reserved; пустой резерв не равен нулю")
                 if available < 0:
                     warnings.append("Отрицательный доступный остаток увеличивает потребность; проверьте учёт")
-                inbound = select(bundle["inbound"], key)
+                if pd.notna(snapshot.available) and pd.notna(snapshot.on_hand) and pd.notna(snapshot.reserved) and not np.isclose(snapshot.available, snapshot.on_hand - snapshot.reserved):
+                    warnings.append("Предоставленный available отличается от on_hand − reserved; используется available, проверьте области учёта")
+                inbound = group("inbound", key)
                 if "qty_source_unit" in inbound:
                     unconverted = inbound["qty_base_unit"].isna() & pd.to_numeric(inbound["qty_source_unit"], errors="coerce").ne(0) & ~inbound["status"].eq("cancelled")
                     if unconverted.any():

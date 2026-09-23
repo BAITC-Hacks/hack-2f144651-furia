@@ -20,7 +20,7 @@ SCHEMAS = {
     "growth_plan": ["supplier_id", "sku_1c", "category_id", "start_date", "end_date", "extra_growth_rate", "source"],
     "seasonal_prior": ["supplier_id", "category_id", "month_of_year", "factor", "known_as_of", "source"],
 }
-NUMBERS = {"quantity_signed", "qty_net", "on_hand", "reserved", "available", "qty_base_unit", "lead_time_days", "review_days", "safety_days", "min_order_qty", "order_multiple", "unconfirmed_moq", "extra_growth_rate", "factor", "month_of_year"}
+NUMBERS = {"quantity_signed", "qty_net", "on_hand", "reserved", "available", "qty_base_unit", "qty_source_unit", "unit_conversion", "lead_time_days", "review_days", "safety_days", "min_order_qty", "order_multiple", "unconfirmed_moq", "extra_growth_rate", "factor", "raw_factor", "month_of_year"}
 DATES = {"date", "month", "coverage_start", "coverage_end", "as_of", "eta", "start_date", "end_date", "known_as_of"}
 REQUIRED = {
     "products": ["supplier_id", "sku_1c", "name"],
@@ -133,6 +133,8 @@ def validate(bundle: Bundle) -> list[str]:
     if not monthly.empty:
         if (monthly["coverage_end"] < monthly["coverage_start"]).any():
             errors.append("monthly_sales: неверное покрытие дат")
+        if ((monthly["coverage_start"] < monthly["month"]) | (monthly["coverage_end"] > monthly["month"] + pd.offsets.MonthEnd(0))).any():
+            errors.append("monthly_sales: покрытие выходит за границы указанного месяца")
         if (monthly["month"].dt.day != 1).any():
             errors.append("monthly_sales.month: первое число месяца")
         complete = monthly["is_complete"].fillna(False)

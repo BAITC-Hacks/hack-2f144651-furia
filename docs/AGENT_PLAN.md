@@ -12,7 +12,7 @@
 |---|---|---|
 | DATA | `src/ekt/partner.py`, `src/ekt/ingest.py`, `tests/test_partner.py`, `tests/test_ingest.py`, `tests/test_partner_regressions.py` | `docs/handoffs/data.md` |
 | ENGINE | `src/ekt/demand.py`, `src/ekt/forecast.py`, `src/ekt/engine.py`, `tests/test_demand.py`, `tests/test_forecast.py`, `tests/test_engine_regressions.py`, `scripts/evaluate_forecast.py` | `docs/handoffs/engine.md` |
-| LEAD | `src/ekt/schema.py`, `src/ekt/demo.py`, `src/ekt/review.py`, `src/ekt/export.py`, `src/ekt/__init__.py`, `app.py`, `tests/conftest.py`, `tests/test_acceptance.py`, `tests/test_edges.py`, `tests/test_workflow.py`, `tests/test_schema.py`, `tests/test_export.py`, `tests/test_review.py`, зависимости, конфигурация и общая документация/prompts | `docs/STATUS.md` |
+| LEAD | `src/ekt/schema.py`, `src/ekt/demo.py`, `src/ekt/review.py`, `src/ekt/export.py`, `src/ekt/__init__.py`, `app.py`, `setup.ps1`, `scripts/smoke.py`, `tests/conftest.py`, `tests/test_acceptance.py`, `tests/test_edges.py`, `tests/test_workflow.py`, `tests/test_schema.py`, `tests/test_export.py`, `tests/test_review.py`, зависимости, конфигурация и общая документация/prompts | `docs/STATUS.md` |
 | REVIEWER | Только `docs/handoffs/review.md`, продуктовый код не правит | Независимые результаты и дефекты |
 
 Общие документы не включают чужие handoff: их пишет только назначенный исполнитель.

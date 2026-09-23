@@ -186,8 +186,13 @@ m3.metric("Риск дефицита", int(rows.urgency.eq("Риск дефиц�
 m4.metric("Нужны данные", int(rows.recommended_qty.isna().sum()))
 st.caption("Количество метров и штук не суммируется. Риск учитывает даты поступления уже заказанных партий.")
 
-supplier_filter = st.multiselect("Поставщики для просмотра", rows.supplier_id.unique().tolist(), default=rows.supplier_id.unique().tolist())
-visible = rows.loc[rows.supplier_id.isin(supplier_filter)]
+filter_left, filter_middle, filter_right = st.columns(3)
+supplier_filter = filter_left.multiselect("Поставщики для просмотра", rows.supplier_id.unique().tolist(), default=rows.supplier_id.unique().tolist())
+scope_options = rows.warehouse_scope.unique().tolist()
+scope_filter = filter_middle.multiselect("Области склада", scope_options, default=scope_options)
+category_options = rows.category_id.fillna("Не указана").unique().tolist()
+category_filter = filter_right.multiselect("Категории", category_options, default=category_options)
+visible = rows.loc[rows.supplier_id.isin(supplier_filter) & rows.warehouse_scope.isin(scope_filter) & rows.category_id.fillna("Не указана").isin(category_filter)]
 summary_columns = ["supplier_id", "sku_1c", "name", "warehouse_scope", "unit", "recommended_qty", "urgency"]
 st.dataframe(visible[summary_columns], hide_index=True, width="stretch", column_config={"supplier_id": "Поставщик", "sku_1c": "Код 1С", "name": "Товар", "warehouse_scope": "Область", "unit": "Ед.", "recommended_qty": st.column_config.NumberColumn("Рекомендовано", format="%.2f"), "urgency": "Приоритет"})
 
@@ -208,7 +213,7 @@ if detail:
         st.caption("Прогноз по дням")
         st.line_chart(detail["forecast"].daily)
     with st.expander("Компоненты, события и происхождение"):
-        st.dataframe(pd.DataFrame([row]).T.rename(columns={row.name: "Значение"}), width="stretch")
+        st.dataframe(pd.DataFrame([row]).T.astype("string").rename(columns={row.name: "Значение"}), width="stretch")
         if not detail["demand"].events.empty:
             st.write("Обнаруженные разовые события")
             st.dataframe(detail["demand"].events, hide_index=True, width="stretch")
