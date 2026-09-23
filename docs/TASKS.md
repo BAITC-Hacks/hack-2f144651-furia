@@ -12,6 +12,7 @@
 
 | ID / статус | Владелец | Результат и файлы | Зависимости / приёмка |
 |---|---|---|---|
+| CI-02 / in_progress | Интегратор `/root`; Reviewer `/root/ci_review` | Причина красных статусов Actions и согласованный режим запусков | Назначение, SHA, файлы и приёмка: [CI-02](tasks/CI-02.md) |
 | ROLE-01 / done | Интегратор | Единые Frontend/Backend/Logic, правила Git, стартовые инструкции и промпты | Проверены ссылки, владение и документационный diff; независимая проверка: [ROLE-01](tasks/ROLE-01.md) |
 | ARCH-01 / done | Интегратор | ekt_ui, application, AGENTS, документация; прямое внесение в main | 54 passed после переноса, smoke, pip check и браузер; см. STATUS |
 | FE-01 / done | Frontend | Модули импорта, таблиц, результатов и review внутри ekt_ui | `7cd9816`; путь демо/расчёт/утверждение покрыт AppTest |
@@ -27,7 +28,7 @@
 | LOG-02 / done | Интегратор | review.py и tests/test_review.py: строгая проверка row_id | Ровно одна правка на каждую позицию; пропуски/лишние/пустые/дубли ID отвергаются, порядок свободный, ручной ноль сохраняется |
 | E1/E2/E4 / done | Logic | Клиентская повторяемость, предупреждение короткой истории, walk-forward | `874238a`; числовые регрессии и методология |
 | E3 / done | Интегратор | tests/test_acceptance.py, test_edges.py, test_engine_regressions.py | Stockout, cutoff, единственный рост, резерв, ETA и MOQ; числовые проверки |
-| INT-01 / blocked (код готов) | Интегратор / владелец GitHub | .github/workflows/checks.yml, Python 3.12 Windows/Linux | Локальная чистая проверка 208 passed; GitHub не запускает jobs из-за billing lock аккаунта. После разблокировки повторить workflow |
+| INT-01 / blocked (код готов) | Интегратор / владелец GitHub | .github/workflows/checks.yml, Python 3.12 Windows/Linux | GitHub не запускает jobs из-за billing lock. Автозапуск временно приостановлен в [CI-02](tasks/CI-02.md); после разблокировки вручную проверить workflow и вернуть push/PR |
 | L2/L3 / done | Интегратор | Два поставщика, ввод/ограничения, правки, утверждение и экспорт | AppTest и smoke: ручной ноль, сброс утверждения, сохранение набора при ошибке, CSV/XLSX |
 | L4/L5 / done (локальная приёмка) | Интегратор | Интегрированная база, чистая установка, документация и демонстрация | Чистая копия c876046: 208 passed, smoke, pip check, health=ok; отдельный внешний REVIEWER не назначался |
 

@@ -87,11 +87,23 @@ uv pip install --python .venv/bin/python -r requirements.lock
 BE-03 требует устранения ошибок оригиналов и подтверждения бизнес-входов; удалённый CI
 заблокирован GitHub из-за billing issue аккаунта, до выполнения шагов.
 
-CI в [GitHub Actions](https://github.com/BAITC-Hacks/hack-2f144651-furia/actions) запускает
-`.github/workflows/checks.yml` на push в main и pull request: Python 3.12, отдельная
-чистая `.venv` Windows/Linux, установка requirements.lock, pip check, все тесты,
-smoke и синтетический walk-forward. Workflow имеет только contents:read,
-версии checkout/setup-python закреплены SHA; секреты и партнёрские архивы не нужны.
+Автоматический запуск CI при push и pull request временно приостановлен по решению
+пользователя: billing lock владельца репозитория останавливает jobs до первого шага.
+Новые коммиты не запускают эти проверки; отсутствие красного статуса не означает
+успешный CI. История прошлых неудачных запусков сохраняется. До разблокировки
+выполняйте проверки локально командами выше и оценку прогноза командой ниже.
+
+В [GitHub Actions](https://github.com/BAITC-Hacks/hack-2f144651-furia/actions)
+сохранён ручной запуск: **EKT checks → Run workflow → main** (либо
+`gh workflow run checks.yml --ref main`). При действующем billing lock он также
+завершится отказом до выполнения тестов. После разблокировки владельцем запустите
+workflow вручную и, после успешной проверки, верните в `.github/workflows/checks.yml`
+триггеры `push` с `branches: [main]` и `pull_request`.
+
+Состав проверки сохранён: Python 3.12, отдельная чистая `.venv` Windows/Linux,
+установка requirements.lock, pip check, все тесты, smoke и синтетический
+walk-forward. Workflow имеет только contents:read, версии checkout/setup-python
+закреплены SHA; секреты и партнёрские архивы не нужны.
 Использование actions соответствует [документации GitHub](https://docs.github.com/en/actions/tutorials/build-and-test-code/python).
 
 Локальная воспроизводимая оценка:
