@@ -144,3 +144,26 @@ def test_demand_analytics_conservation_with_events_partial_sales_and_overlapping
     for name, expected in [("raw", 1294), ("excluded", 1000), ("imputed", 16), ("corrected", 310)]:
         assert result.monthly[name].sum() == expected
     assert forecast(result, "2026-01-31", 7).daily.sum() == pytest.approx(70)
+
+
+def test_demand_rejects_overflow_before_missing_aggregate_can_become_zero(make_bundle):
+    bundle = make_bundle("2026-01-01", "2026-01-03", values=[1e308, 1e308, -1e308])
+    bundle["sales"]["date"] = pd.Timestamp("2026-01-01")
+    with pytest.raises(ValueError, match="числов|конеч|диапазон"):
+        build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-01-03", remove_oneoffs=False)
+
+
+def test_demand_rejects_monthly_aggregate_overflow(make_bundle):
+    bundle = make_bundle("2026-01-01", "2026-01-02", values=[1e308, 1e308])
+    with pytest.raises(ValueError, match="числов|конеч|диапазон"):
+        build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-01-02", remove_oneoffs=False)
+
+
+def test_unknown_uncovered_days_remain_missing_but_covered_nan_is_rejected(make_bundle):
+    bundle = make_bundle("2026-01-01", "2026-01-02")
+    demand = build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-01-04")
+    assert demand.daily.loc["2026-01-03":, "corrected"].isna().all()
+    assert not demand.daily.loc["2026-01-03":, "covered"].any()
+    bundle["sales"].loc[0, "quantity_signed"] = float("nan")
+    with pytest.raises(ValueError, match="числов|конеч|диапазон"):
+        build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-01-04")

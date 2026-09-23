@@ -119,6 +119,117 @@ def test_forecast_without_stock_is_not_a_completed_order_calculation(make_bundle
         "calculation_status": "unavailable", "order_required": None}
 
 
+def test_row_id_is_unambiguous_for_pipe_characters(make_bundle):
+    from ekt.review import approve, export_frame, initial_edits
+
+    first, second = make_bundle(), make_bundle(rate=20)
+    for bundle, sku, scope in [(first, "X|Y", "Z"), (second, "X", "Y|Z")]:
+        for frame in bundle.tables.values():
+            if "sku_1c" in frame:
+                frame["sku_1c"] = sku
+            if "warehouse_scope" in frame:
+                frame["warehouse_scope"] = scope
+    for name in ["products", "sales", "stock_snapshots"]:
+        first.tables[name] = pd.concat([first[name], second[name]], ignore_index=True)
+
+    calculation = calculate(first, "2026-08-31")
+    assert len(calculation.rows) == len(calculation.details) == 2
+    assert calculation.rows.row_id.nunique() == 2
+    assert calculate(first, "2026-08-31").rows.row_id.tolist() == calculation.rows.row_id.tolist()
+    edits = initial_edits(calculation.rows)
+    edits["reason"] = "separate composite key"
+    approval = approve(calculation, edits)
+    exported = export_frame(calculation, edits, approval)
+    assert exported.row_id.nunique() == 2
+    assert exported.approval_status.eq("approved").all()
+
+
+def test_extreme_finite_prior_does_not_turn_positive_demand_into_zero(make_bundle):
+    from ekt.schema import SCHEMAS
+
+    bundle = make_bundle(rate=10)
+    bundle["stock_snapshots"].loc[:, ["on_hand", "reserved", "available"]] = [0, 0, 0]
+    bundle.tables["seasonal_prior"] = pd.DataFrame(
+        [["S", "A", month, 1e308, "2026-08-31", "synthetic"] for month in range(1, 13)],
+        columns=SCHEMAS["seasonal_prior"],
+    )
+    row = calculate(bundle, "2026-08-31").rows.iloc[0]
+    assert row.expected_demand_horizon == pytest.approx(210)
+    assert row.recommended_qty > 0
+
+
+def test_tiny_order_multiple_is_a_controlled_numeric_error():
+    from ekt.engine import order_quantity
+
+    with pytest.raises(ValueError, match="кратност|точност"):
+        order_quantity(10, 0, 0, 0, 1e-308)
+    assert order_quantity(1e-8, 0, 0, 0, 1e8) == (1e-8, 1e8)
+    assert order_quantity(1.7e308, 0, 0, 0, 1.0) == (1.7e308, 1.7e308)
+    with pytest.raises(ValueError, match="кратностей|диапазон"):
+        order_quantity(1.7e308, 0, 0, 0, 1e-8)
+
+
+def test_order_rounding_does_not_remove_a_supported_fractional_need():
+    from ekt.engine import order_quantity
+
+    assert order_quantity(100000000.00000001, 0, 0, 0, 1)[1] == 100000001
+    assert order_quantity(.07, 0, 0, 0, .01)[1] == .07
+    assert order_quantity(.3, 0, .1, 0, .1)[1] == .2
+    assert order_quantity(1e17, 0, 0, 0, .3)[1] >= 1e17
+    assert order_quantity(1e15, 0, 0, 0, 1e-8)[1] >= 1e15
+    assert order_quantity(1e-11, 0, 0, 0, 1) == (1e-11, 1)
+    assert order_quantity(.1, .2, .3, 0, 1) == (0, 0)
+    with pytest.raises(ValueError, match="кратност|Кратност|точност"):
+        order_quantity(4.5e-8, 0, 0, 0, 1.5e-8)
+
+
+@pytest.mark.parametrize("horizon,safety,expected", [(7, 2, .9), (14, 2, 1.6), (21, 2, 2.3), (30, 3, 3.3)])
+def test_fractional_order_arithmetic_does_not_add_a_pack_from_float_noise(make_bundle, horizon, safety, expected):
+    from ekt.engine import order_quantity
+
+    assert order_quantity(.1, .2, 0, 0, .1) == (.3, .3)
+    assert order_quantity(.4, 0, .1, 0, .1) == (.3, .3)
+    bundle = make_bundle(rate=.1)
+    bundle["policies"]["order_multiple"] = .1
+    bundle["policies"]["lead_time_days"] = horizon
+    bundle["policies"]["review_days"] = 0
+    bundle["policies"]["safety_days"] = safety
+    row = calculate(bundle, "2026-08-31").rows.iloc[0]
+    assert row.recommended_qty == expected
+
+
+def test_real_small_sales_change_crosses_pack_boundary(make_bundle):
+    bundle = make_bundle(rate=10)
+    assert calculate(bundle, "2026-08-31").rows.iloc[0].recommended_qty == 230
+    bundle["sales"]["quantity_signed"] = 10.00000000004
+    assert calculate(bundle, "2026-08-31").rows.iloc[0].recommended_qty == 231
+
+
+def test_nonfinite_projected_balance_makes_order_unavailable(make_bundle):
+    from ekt.schema import SCHEMAS
+
+    bundle = make_bundle("2026-08-31", "2026-08-31", rate=7e306)
+    bundle["policies"]["safety_days"] = 0
+    bundle["stock_snapshots"].loc[:, ["on_hand", "reserved", "available"]] = [1.5e308, 0, 1.5e308]
+    bundle.tables["inbound"] = pd.DataFrame(
+        [["S", "000001_", "W", "large-arrival", 1.5e308, "2026-09-01", "confirmed", "confirmed"]],
+        columns=SCHEMAS["inbound"],
+    )
+    row = calculate(bundle, "2026-08-31").rows.iloc[0]
+    assert pd.isna(row.recommended_qty)
+    assert row.urgency == "Нужны данные"
+    assert "остат" in row.explanation
+
+
+def test_nonfinite_safety_makes_order_unavailable(make_bundle):
+    bundle = make_bundle("2026-08-31", "2026-08-31", rate=7e306)
+    bundle["policies"]["safety_days"] = 30
+    row = calculate(bundle, "2026-08-31").rows.iloc[0]
+    assert pd.isna(row.recommended_qty)
+    assert row.urgency == "Нужны данные"
+    assert "числов" in row.explanation
+
+
 @pytest.mark.parametrize("row, level, days, status, required", [
     ({"recommended_qty": 0, "risk_date": "2026-08-30"}, "critical", -1, "calculated", False),
     ({"recommended_qty": 0, "risk_date": "2026-08-31"}, "critical", 0, "calculated", False),

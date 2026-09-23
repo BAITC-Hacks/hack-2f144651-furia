@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 import numpy as np
 import pandas as pd
+from .schema import canonical_json
 
 
 @dataclass
@@ -15,6 +16,18 @@ class Approval:
 def initial_edits(rows):
     return pd.DataFrame({"row_id": rows.row_id, "selected": rows.recommended_qty.notna() & rows.recommended_qty.gt(0),
                          "adjusted_qty": rows.recommended_qty, "reason": ""})
+
+
+def manager_override_mask(rows):
+    """Exact quantity-change predicate shared by review rules and presentation.
+
+    Quantities are numeric decisions: any representable change is an override.
+    In particular, the tolerance must not grow with the order magnitude.
+    """
+    recommended = pd.to_numeric(rows["recommended_qty"], errors="coerce")
+    adjusted = pd.to_numeric(rows["adjusted_qty"], errors="coerce")
+    final = adjusted.where(adjusted.notna(), recommended)
+    return recommended.notna() & final.notna() & final.ne(recommended)
 
 
 def reviewed_rows(calculation, edits):
@@ -38,6 +51,12 @@ def reviewed_rows(calculation, edits):
         return frame
     if frame["recommended_qty"].isna().any():
         raise ValueError("Нельзя экспортировать выбранные позиции с незавершённым расчётом")
+    try:
+        recommended = pd.to_numeric(frame["recommended_qty"], errors="raise").astype(float)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Рекомендованное количество должно быть числом") from exc
+    if (~np.isfinite(recommended) | recommended.lt(0)).any():
+        raise ValueError("Рекомендованное количество должно быть конечным и неотрицательным")
     frame["final_qty"] = frame["adjusted_qty"].where(frame["adjusted_qty"].notna(), frame["recommended_qty"])
     try:
         frame["final_qty"] = pd.to_numeric(frame["final_qty"], errors="raise").astype(float)
@@ -45,12 +64,25 @@ def reviewed_rows(calculation, edits):
         raise ValueError("Итоговое количество должно быть числом") from exc
     if (~np.isfinite(frame["final_qty"]) | frame["final_qty"].lt(0)).any():
         raise ValueError("Итоговое количество должно быть конечным и неотрицательным")
-    frame["manager_override"] = ~np.isclose(frame["final_qty"], frame["recommended_qty"])
+    frame["manager_override"] = manager_override_mask(frame)
     return frame
 
 
 def review_signature(calculation, edits):
-    return hashlib.sha256((calculation.fingerprint + edits.to_json(orient="split", default_handler=str)).encode()).hexdigest()
+    payload = {
+        "version": 2,
+        "calculation_fingerprint": calculation.fingerprint,
+        "calculation_config": calculation.config,
+        "calculation_rows": {
+            "columns": list(calculation.rows.columns),
+            "rows": calculation.rows.to_dict(orient="split")["data"],
+        },
+        "edits": {
+            "columns": list(edits.columns),
+            "rows": edits.to_dict(orient="split")["data"],
+        },
+    }
+    return hashlib.sha256(("ekt-review-v2\0" + canonical_json(payload)).encode("ascii")).hexdigest()
 
 
 def approve(calculation, edits):

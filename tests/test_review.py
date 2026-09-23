@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from ekt.engine import Calculation
-from ekt.review import approve, export_frame, initial_edits
+from ekt.review import approve, export_frame, initial_edits, review_signature
 
 
 @pytest.fixture
@@ -66,6 +66,44 @@ def test_invalid_calculation_id_is_rejected(calculation):
     calculation.rows.loc[1, "row_id"] = "a"
     with pytest.raises(ValueError, match="row_id"):
         export_frame(calculation, edits)
+
+
+def test_approval_is_invalidated_by_lossless_input_fingerprint(make_bundle):
+    from ekt.engine import calculate
+
+    bundle = make_bundle()
+    previous = calculate(bundle, "2026-08-31")
+    edits = initial_edits(previous.rows)
+    approval = approve(previous, edits)
+    bundle["sales"].loc[0, "quantity_signed"] = 10.00000000004
+    current = calculate(bundle, "2026-08-31")
+
+    assert previous.fingerprint != current.fingerprint
+    assert export_frame(current, edits, approval).approval_status.eq("draft").all()
+
+
+def test_review_signature_preserves_adjusted_quantity_precision(calculation):
+    first = initial_edits(calculation.rows)
+    second = first.copy()
+    first.loc[0, "adjusted_qty"] = 230.0
+    second.loc[0, "adjusted_qty"] = 231.0
+    assert review_signature(calculation, first) != review_signature(calculation, second)
+    subtle = second.copy()
+    subtle.loc[0, "adjusted_qty"] = 230.00000000004
+    assert review_signature(calculation, first) != review_signature(calculation, subtle)
+
+
+def test_small_relative_change_requires_reason_and_manager_override(calculation):
+    calculation.rows.loc[0, "recommended_qty"] = 1_000_000.0
+    edits = initial_edits(calculation.rows)
+    edits.loc[0, "adjusted_qty"] = 1_000_009.0
+
+    frame = export_frame(calculation, edits)
+    assert frame.loc[0, "manager_override"]
+    with pytest.raises(ValueError, match="причину"):
+        approve(calculation, edits)
+    edits.loc[0, "reason"] = "обоснованное изменение"
+    assert approve(calculation, edits).signature
 
 
 @pytest.mark.parametrize("bad", ["not a number", np.inf, -1])

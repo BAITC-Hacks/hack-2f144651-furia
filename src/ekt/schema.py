@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, datetime
 import hashlib
 import json
+import math
 import numpy as np
 import pandas as pd
 
@@ -168,13 +170,76 @@ def validate(bundle: Bundle) -> list[str]:
     return errors
 
 
+def _canonical_value(value):
+    """Encode scalar values without rounding binary floats through JSON decimals."""
+    if value is None or value is pd.NA or value is pd.NaT:
+        return None
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, (pd.Timestamp, datetime, date)):
+        return {"__date_iso__": value.isoformat()}
+    if isinstance(value, float):
+        if math.isnan(value):
+            return {"__float64__": "nan"}
+        if math.isinf(value):
+            return {"__float64__": "+inf" if value > 0 else "-inf"}
+        return {"__float64__": value.hex()}
+    if isinstance(value, dict):
+        return {str(key): _canonical_value(item) for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_value(item) for item in value]
+    if isinstance(value, (str, int, bool)):
+        return value
+    return str(value)
+
+
+def canonical_json(value):
+    """Version-independent canonical JSON with exact IEEE-754 float encoding."""
+    return json.dumps(_canonical_value(value), ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
 def fingerprint(bundle: Bundle, config=None):
     digest = hashlib.sha256()
-    digest.update(bundle.mode.encode())
+    digest.update(b"ekt-fingerprint-v2\0")
+
+    def add(value):
+        encoded = canonical_json(value).encode("ascii")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+
+    add(["version", 2])
+    add(["mode", bundle.mode])
     for name in sorted(bundle.tables):
-        digest.update(name.encode())
-        digest.update(bundle[name].to_json(orient="split", date_format="iso", default_handler=str).encode())
-    digest.update(json.dumps(config or {}, sort_keys=True, default=str).encode())
+        frame = bundle[name]
+        add(["table", name, list(frame.columns), len(frame)])
+        # pandas' C serializer keeps row encoding fast. Work in bounded chunks;
+        # its JSON decimal precision is capped at 15, so add original float64 bits
+        # per numeric column to retain distinctions beyond that decimal view.
+        float_columns = list(frame.select_dtypes(include=["floating"]).columns)
+        object_columns = list(frame.select_dtypes(include=["object"]).columns)
+        add(["float64_columns", float_columns])
+        add(["object_columns", object_columns])
+        for start in range(0, len(frame), 8192):
+            stop = min(start + 8192, len(frame))
+            chunk = frame.iloc[start:stop]
+            frame_json = chunk.to_json(orient="split", date_format="iso", date_unit="ns", double_precision=15,
+                                       default_handler=str)
+            add(["frame_json", start, frame_json])
+            # Public callers can pass unnormalized mixed/object columns. Preserve
+            # their scalar types and exact floats as well as nanosecond dates.
+            for column in object_columns:
+                add(["object_column", column, start, chunk[column].tolist()])
+            for column in float_columns:
+                values = chunk[column].to_numpy(dtype="<f8", copy=True)
+                values[np.isnan(values)] = np.nan  # canonicalize NaN payload bits
+                label = canonical_json(["float64_column", column, start, len(values)]).encode("ascii")
+                data = values.tobytes(order="C")
+                digest.update(len(label).to_bytes(8, "big"))
+                digest.update(label)
+                digest.update(len(data).to_bytes(8, "big"))
+                digest.update(data)
+        add(["end_table", name])
+    add(["config", config or {}])
     return digest.hexdigest()
 
 

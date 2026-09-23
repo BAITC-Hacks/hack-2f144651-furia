@@ -1,6 +1,8 @@
 """Pure local orchestration: validated canonical inputs → explanations + orders."""
 from dataclasses import dataclass
+from decimal import Decimal, localcontext
 import hashlib
+import json
 import math
 import numpy as np
 import pandas as pd
@@ -54,11 +56,70 @@ def classify_risk(row, as_of):
 
 def order_quantity(demand, safety, available, inbound, multiple, minimum=0):
     values = [demand, safety, available, inbound, multiple, minimum]
-    if not all(np.isfinite(values)) or multiple <= 0 or minimum < 0 or min(demand, safety, inbound) < 0:
+    try:
+        finite = bool(np.isfinite(values).all())
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Неверные числовые параметры заказа") from exc
+    if not finite or multiple <= 0 or minimum < 0 or min(demand, safety, inbound) < 0:
         raise ValueError("Неверные числовые параметры заказа")
-    net = max(0., demand + safety - available - inbound)
-    quantity = 0. if net <= 1e-10 else math.ceil(max(net, minimum) / multiple - 1e-10) * multiple
-    return net, round(quantity, 8)
+    # Quantities are returned with eight decimal places; smaller multiples cannot
+    # be represented by this contract and used to overflow ceil(net / multiple).
+    if multiple < 1e-8:
+        raise ValueError("Кратность меньше поддерживаемой точности заказа (1e-8)")
+    decimal_multiple = Decimal(str(multiple))
+    if decimal_multiple.as_tuple().exponent < -8:
+        raise ValueError("Кратность не представима с поддерживаемой точностью заказа (8 знаков)")
+    # Preserve decimal arithmetic through the net formula as well: a binary
+    # .1 + .2 artefact must not purchase an extra pack, while real input changes
+    # (including more than eight decimal places of demand) remain significant.
+    with localcontext() as context:
+        context.prec = 340
+        raw_net = float(sum(Decimal(str(value)) for value in (demand, safety, -available, -inbound)))
+    if not math.isfinite(raw_net):
+        raise ValueError("Потребность выходит за поддерживаемый числовой диапазон")
+    net = max(0., raw_net)
+    if net == 0:
+        return net, 0.
+    target = max(net, minimum)
+    units = target / multiple
+    if not math.isfinite(units):
+        raise ValueError("Количество кратностей выходит за поддерживаемый числовой диапазон")
+    # Decimal input ratios avoid binary division noise without erasing a real
+    # positive remainder at large quantities (even when it is only one float ULP).
+    target_numerator, target_denominator = Decimal(str(target)).as_integer_ratio()
+    multiple_numerator, multiple_denominator = decimal_multiple.as_integer_ratio()
+    numerator = target_numerator * multiple_denominator
+    denominator = target_denominator * multiple_numerator
+    unit_count = -(-numerator // denominator)
+    # Multiplication by the binary float multiple can also round an otherwise
+    # correct large order below its target. Form the exact decimal product first.
+    with localcontext() as context:
+        context.prec = 340  # Full finite float64 magnitude plus eight decimals.
+        quantity = float(unit_count * decimal_multiple)
+    if not math.isfinite(quantity):
+        raise ValueError("Рекомендуемый заказ выходит за поддерживаемый числовой диапазон")
+    result = round(quantity, 8)
+    if not math.isfinite(result):
+        raise ValueError("Рекомендуемый заказ выходит за поддерживаемый числовой диапазон")
+    return net, result
+
+
+def _finite_sum(values, name, *, decimal=False):
+    numbers = np.asarray(values, dtype=float)
+    if not np.isfinite(numbers).all():
+        raise ValueError(f"{name}: не все значения находятся в конечном числовом диапазоне")
+    try:
+        if decimal:
+            with localcontext() as context:
+                context.prec = 340
+                result = float(sum(Decimal(str(value)) for value in numbers))
+        else:
+            result = math.fsum(numbers)
+    except OverflowError as exc:
+        raise ValueError(f"{name}: сумма выходит за поддерживаемый конечный числовой диапазон") from exc
+    if not math.isfinite(result):
+        raise ValueError(f"{name}: сумма выходит за поддерживаемый конечный числовой диапазон")
+    return result
 
 
 def policy_for(bundle, product):
@@ -123,7 +184,8 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
         scopes = scopes_by_product.get((product.supplier_id, product.sku_1c), set())
         for scope in sorted(scopes or ["UNSPECIFIED"]):
             key = (product.supplier_id, product.sku_1c, scope)
-            row_id = hashlib.sha256("|".join(key).encode()).hexdigest()[:16]
+            identity = json.dumps(["row-id-v2", *key], ensure_ascii=True, separators=(",", ":"))
+            row_id = "r2_" + hashlib.sha256(identity.encode("ascii")).hexdigest()
             warnings, assumptions = [], []
             row = {"row_id": row_id, "supplier_id": product.supplier_id, "sku_1c": product.sku_1c,
                    "supplier_sku": product.supplier_sku, "name": product.name, "warehouse_scope": scope,
@@ -154,9 +216,11 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
                 warnings += demand.warnings + prediction.warnings
                 detail = {"demand": demand, "forecast": prediction, "policy": policy.to_dict()}
                 details[row_id] = detail
-                row.update(horizon_days=horizon, regular_demand=float(demand.daily.regular.sum()),
-                           excluded_oneoff_qty=float(demand.daily.excluded.sum()), imputed_lost_demand=float(demand.daily.imputed.sum()),
-                           expected_demand_horizon=float(prediction.daily.sum()), seasonal_source=prediction.seasonal_source,
+                observed = demand.daily.loc[demand.daily["covered"]]
+                expected = _finite_sum(prediction.daily, "Прогноз за горизонт", decimal=True)
+                row.update(horizon_days=horizon, regular_demand=_finite_sum(observed.regular, "Регулярный спрос"),
+                           excluded_oneoff_qty=_finite_sum(observed.excluded, "Исключённый спрос"), imputed_lost_demand=_finite_sum(observed.imputed, "Восстановленный спрос"),
+                           expected_demand_horizon=expected, seasonal_source=prediction.seasonal_source,
                            trend_per_month=prediction.slope_per_month, training_end=prediction.training_end)
                 stock = group("stock_snapshots", key)
                 stock = stock.loc[stock["as_of"].eq(as_of) & stock["snapshot_kind"].eq("current")]
@@ -183,19 +247,25 @@ def calculate(bundle: Bundle, as_of, remove_oneoffs=True, compensate=True):
                 active = inbound.loc[inbound["status"].eq("confirmed")]
                 end = as_of + pd.Timedelta(days=horizon)
                 on_time = active.loc[active["eta"].gt(as_of) & active["eta"].le(end)]
-                late = active.loc[active["eta"].gt(end), "qty_base_unit"].sum()
-                unknown = active.loc[active["eta"].isna(), "qty_base_unit"].sum()
-                overdue = active.loc[active["eta"].le(as_of), "qty_base_unit"].sum()
+                late = _finite_sum(active.loc[active["eta"].gt(end), "qty_base_unit"], "Поздний путь")
+                unknown = _finite_sum(active.loc[active["eta"].isna(), "qty_base_unit"], "Путь без ETA")
+                overdue = _finite_sum(active.loc[active["eta"].le(as_of), "qty_base_unit"], "Просроченный путь")
                 if unknown or overdue:
                     warnings.append(f"Не учтён путь без ETA ({unknown:g}) или просроченный ({overdue:g}); требуется подтверждение")
                 if inbound.empty:
                     assumptions.append("Таблица пути для позиции пуста: подтверждённых открытых партий нет")
-                expected = float(prediction.daily.sum())
-                safety = float(prediction.daily.mean() * policy.safety_days)
-                incoming = float(on_time["qty_base_unit"].sum())
+                with localcontext() as context:
+                    context.prec = 340
+                    safety = float(Decimal(str(expected)) / len(prediction.daily) * Decimal(str(policy.safety_days)))
+                if not math.isfinite(safety):
+                    raise ValueError("Страховой запас выходит за поддерживаемый конечный числовой диапазон")
+                incoming = _finite_sum(on_time["qty_base_unit"], "Своевременный путь")
                 net, quantity = order_quantity(expected, safety, available, incoming, policy.order_multiple, policy.min_order_qty)
                 arrivals = on_time.groupby("eta")["qty_base_unit"].sum().reindex(prediction.daily.index, fill_value=0)
-                balance = available + (arrivals - prediction.daily).cumsum()
+                with np.errstate(over="ignore", invalid="ignore"):
+                    balance = available + (arrivals - prediction.daily).cumsum()
+                if not np.isfinite(balance.to_numpy(dtype=float)).all():
+                    raise ValueError("Прогноз остатков выходит за поддерживаемый конечный числовой диапазон")
                 risk = balance.loc[balance < -1e-9]
                 risk_date = "" if risk.empty else risk.index[0].date().isoformat()
                 urgency = "Риск дефицита" if len(risk) else "Плановый заказ" if quantity > 0 else "Запаса достаточно"

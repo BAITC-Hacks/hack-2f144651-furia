@@ -14,6 +14,11 @@ class DemandResult:
     warnings: list[str] = field(default_factory=list)
 
 
+def _require_finite(values, name):
+    if not np.isfinite(np.asarray(values, dtype=float)).all():
+        raise ValueError(f"{name}: значение выходит за поддерживаемый конечный числовой диапазон")
+
+
 def sale_quantities(sales):
     result = sales.copy()
     kinds = result["document_type"].str.lower().fillna("")
@@ -34,6 +39,7 @@ def _positive_events(sales):
         for i, c, d in zip(positive.index, positive["customer_id"], positive["document_id"])
     ]
     groups = positive.groupby(["date", "event_key"], as_index=False)["quantity_signed"].sum()
+    _require_finite(groups["quantity_signed"], "Объём события продаж")
     return positive, groups
 
 
@@ -102,6 +108,8 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
     warnings = []
     sales = sale_quantities(sales.loc[sales["date"] <= as_of])
     monthly = monthly.loc[(monthly["month"] <= as_of) & (monthly["coverage_end"] <= as_of)].copy()
+    _require_finite(sales["quantity_signed"], "Количество продажи")
+    _require_finite(monthly["qty_net"], "Месячный спрос")
     applicability = detector_status(sales, as_of, remove_oneoffs)
     if applicability["status"] == "insufficient_history":
         warnings.append(f"Детектор разовых заказов неприменим: {applicability['positive_event_count']} < {_MINIMUM_EVENTS} положительных событий клиент/дата (без customer_id — документ/дата). Пустой список событий не доказывает отсутствие аномалий; крупные заказы остаются в спросе и требуют ручной проверки.")
@@ -128,6 +136,7 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
         daily.loc[span, "raw"] = 0.0
         daily.loc[span, "covered"] = True
         by_day = sales.groupby("date")[["quantity_signed", "excluded"]].sum()
+        _require_finite(by_day, "Дневная сумма продаж")
         daily.loc[by_day.index, "raw"] = by_day["quantity_signed"]
         daily.loc[by_day.index, "excluded"] = by_day["excluded"]
         warnings.append("Дни между первой и последней накладной без строк считаются нулевыми; полнота выгрузки должна быть подтверждена.")
@@ -162,6 +171,7 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
         # Partial monthly coverage overrides only those dates, not the whole month.
         events["applied"] = ~events["date"].isin(unapplied_dates)
     daily["regular"] = daily["raw"] - daily["excluded"]
+    _require_finite(daily.loc[daily["covered"], ["raw", "excluded", "regular"]], "Наблюдаемый дневной спрос")
     if daily["stockout"].any() and not (daily["covered"] & ~daily["stockout"]).any():
         raise ValueError("Спрос не идентифицируется: нет наблюдаемых дней доступности товара")
     if (daily["regular"] < 0).any():
@@ -182,14 +192,18 @@ def build_demand(sales, monthly, stockouts, as_of, remove_oneoffs=True, compensa
             if not valid.any():
                 warnings.append(f"{period}: спрос в stockout не идентифицируется — нет доступных дней")
                 continue
-            expected = max(0, float(daily.loc[valid, "regular"].mean()))
+            observations = daily.loc[valid, "regular"].to_numpy(dtype=float)
+            scale = float(np.max(np.abs(observations)))
+            expected = max(0, float(scale * np.mean(observations / scale))) if scale else 0.0
             observed = daily.loc[missing, "regular"].fillna(0)
             daily.loc[missing, "raw"] = daily.loc[missing, "raw"].fillna(0)
             daily.loc[missing, "regular"] = observed
             daily.loc[missing, "imputed"] = np.maximum(expected - observed, 0)
             daily.loc[missing, "covered"] = True
     daily["corrected"] = daily["regular"] + daily["imputed"]
+    _require_finite(daily.loc[daily["covered"], ["regular", "imputed", "corrected"]], "Скорректированный дневной спрос")
     summary = daily.groupby(daily.index.to_period("M")).agg(raw=("raw", "sum"), excluded=("excluded", "sum"), imputed=("imputed", "sum"), corrected=("corrected", "sum"), covered_days=("covered", "sum"))
+    _require_finite(summary.loc[summary["covered_days"] > 0, ["raw", "excluded", "imputed", "corrected"]], "Месячная сумма спроса")
     summary.index = summary.index.to_timestamp()
     summary["days"] = summary.index.days_in_month
     summary["complete"] = (summary["covered_days"] == summary["days"]) & (summary.index + pd.offsets.MonthEnd(0) <= as_of)

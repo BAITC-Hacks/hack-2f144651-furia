@@ -23,7 +23,13 @@
   блокирует точный заказ до подтверждения семантики MOQ.
 - `validate(bundle) -> list[str]`: пустой список означает отсутствие обнаруженных
   ошибок схемы, а не полноту всех бизнес-входов.
-- `fingerprint(bundle, config=None) -> str`: отпечаток входов/параметров.
+- `canonical_json(value) -> str`: стабильное внутреннее кодирование scalar-значений;
+  конечные float64 представляются через `float.hex()` без потери значащих битов.
+- `fingerprint(bundle, config=None) -> str`: версия 2 SHA-256 входных таблиц и
+  параметров. Таблицы сериализуются блоками; JSON дополняется точными битами
+  float64 и каноническими значениями столбцов object, даты сохраняют наносекунды.
+  Поэтому десятичное округление JSON не теряет различия исходных чисел.
+  Смена версии намеренно инвалидирует прежние fingerprint и Approval.
 - `select(frame, key) -> DataFrame`: выборка по KEY.
 
 PROVENANCE: source_file, source_sheet, source_row, data_mode. Режимы:
@@ -73,6 +79,9 @@ partner/synthetic/manual. Дополнительные столбцы допус
   seasonal_source, slope_per_month, training_end, warnings. Первый день — as_of+1.
 - `engine.order_quantity(demand, safety, available, inbound, multiple, minimum=0)
   -> (net_need, recommended_qty)`. T1: `(100,20,30,25,10)` → `(65,70)`.
+  Заказ кодируется с точностью 8 десятичных знаков; кратность меньше `1e-8`,
+  кратность с большей десятичной точностью и промежуточное/итоговое числовое
+  переполнение дают локальный `ValueError`.
 - `engine.calculate(bundle, as_of, remove_oneoffs=True, compensate=True)
   -> Calculation(rows, details, fingerprint, config)`. Ошибка схемы — ValueError;
   недостаток данных позиции — строка с NaN recommended_qty и объяснением.
@@ -101,6 +110,11 @@ row_id и содержит demand, forecast, policy, если этап прог�
 DemandResult и ForecastResult согласовать с Интегратором и потребителями. В движке
 нет чтения Excel, Streamlit session state или внешних API.
 
+`row_id` версии 2 имеет вид `r2_<sha256>` и строится от компактного JSON-массива
+версии и трёх строковых ключей. Разделители внутри кодов не создают коллизий.
+Изменение версии row_id сбрасывает несовместимый набор сессионных правок после
+изменения входного fingerprint в интерфейсе; постоянное хранение сессии не заявлено.
+
 ## Решение менеджера
 
 - `review.initial_edits(rows) -> DataFrame`: row_id, selected, adjusted_qty, reason.
@@ -113,6 +127,13 @@ DemandResult и ForecastResult согласовать с Интеграторо�
 - `review.export_frame(calculation, edits, approval=None) -> DataFrame`:
   final_qty, manager_override, draft/approved. Ноль — настоящее ручное решение.
   Изменение входов/правок делает старую подпись утверждения недействительной.
+- `review.manager_override_mask(rows) -> Series[bool]`: общий предикат для слоя
+  представления; сравнивает конечное отредактированное и рекомендованное количество
+  точно, без относительного допуска, который растёт с размером заказа.
+- Подпись Approval версии 2 включает полный fingerprint, фактические строки и
+  параметры Calculation и все поля/строки правок через canonical_json;
+  старые подписи намеренно не подтверждают новый расчёт. Выбранная рекомендация
+  должна быть конечным неотрицательным числом даже при ручной замене количества.
 
 Правила решения менеджера находятся в `src/ekt/review.py`; представление и
 состояние интерфейса — в `src/ekt_ui/review.py`. Публичные поля Approval и

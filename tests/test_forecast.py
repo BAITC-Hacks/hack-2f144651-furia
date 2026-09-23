@@ -201,6 +201,53 @@ def test_known_supplier_prior_fallback_matches_production(make_bundle):
     assert fold["prior_known_as_of"] == "2026-01-31"
 
 
+def test_forecast_rejects_nonfinite_prior_trend_growth_and_aggregate(make_bundle):
+    bundle = make_bundle("2026-01-01", "2026-04-30", rate=10)
+    demand = build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-04-30")
+
+    for bad in (np.nan, np.inf):
+        prior = pd.DataFrame({"known_as_of": [pd.Timestamp("2026-04-30")] * 12,
+                              "month_of_year": range(1, 13), "factor": [bad] * 12,
+                              "source": ["synthetic"] * 12})
+        with pytest.raises(ValueError, match="prior|коэффициент|конеч"):
+            forecast(demand, "2026-04-30", 10, prior=prior)
+
+        broken_trend = type(demand)(demand.daily.copy(), demand.monthly.copy(), demand.events.copy())
+        broken_trend.monthly.loc[:, "corrected"] = bad
+        with pytest.raises(ValueError, match="тренд|истори|конеч"):
+            forecast(broken_trend, "2026-04-30", 10)
+
+        growth = pd.DataFrame({"start_date": [pd.Timestamp("2026-05-01")],
+                               "end_date": [pd.Timestamp("2026-05-31")],
+                               "extra_growth_rate": [bad]})
+        with pytest.raises(ValueError, match="рост|конеч"):
+            forecast(demand, "2026-04-30", 10, growth=growth)
+
+    growth = pd.DataFrame({"start_date": [pd.Timestamp("2026-05-01")],
+                           "end_date": [pd.Timestamp("2026-05-31")],
+                           "extra_growth_rate": [1e307]})
+    with pytest.raises(ValueError, match="агрег|горизонт|конеч"):
+        forecast(demand, "2026-04-30", 10, growth=growth)
+
+
+def test_robust_line_median_does_not_overflow_for_constant_finite_history():
+    from ekt.forecast import robust_line
+
+    assert robust_line([-3, -2, -1, 0], [1e308] * 4) == (0, 1e308)
+
+
+def test_unused_extreme_prior_cannot_block_own_seasonality(make_bundle):
+    bundle = make_bundle("2024-09-01", "2026-08-31", rate=10)
+    demand = build_demand(bundle["sales"], bundle["monthly_sales"], bundle["stockouts"], "2026-08-31")
+    expected = forecast(demand, "2026-08-31", 21)
+    prior = pd.DataFrame({"known_as_of": [pd.Timestamp("2026-08-31")] * 12,
+                          "month_of_year": range(1, 13), "factor": [1e308, 1e-308] * 6,
+                          "source": ["synthetic"] * 12})
+    actual = forecast(demand, "2026-08-31", 21, prior=prior)
+    assert "SKU" in actual.seasonal_source
+    pd.testing.assert_series_equal(actual.daily, expected.daily)
+
+
 def test_local_canonical_cli_runs_outside_pytest_pythonpath(make_bundle, tmp_path):
     from ekt.demo import canonical_zip
 
