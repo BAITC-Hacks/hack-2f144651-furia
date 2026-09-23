@@ -9,8 +9,21 @@ gatherUsageStats = false
 
 [theme]
 base = "light"
-primaryColor = "#047E4A"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F3F5F4"
-textColor = "#202724"
 font = "sans serif"
+primaryColor = "#087F5B"
+
+[theme.light]
+primaryColor = "#087F5B"
+backgroundColor = "#F6F8F5"
+secondaryBackgroundColor = "#EDF2ED"
+textColor = "#202B28"
+borderColor = "#DCE5DF"
+dataframeHeaderBackgroundColor = "#EDF2ED"
+
+[theme.dark]
+primaryColor = "#6BD9AA"
+backgroundColor = "#111A16"
+secondaryBackgroundColor = "#223229"
+textColor = "#E5EEEA"
+borderColor = "#33443C"
+dataframeHeaderBackgroundColor = "#223229"

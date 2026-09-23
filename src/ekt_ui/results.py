@@ -6,6 +6,7 @@ from ekt.engine import calculate
 from ekt.schema import fingerprint, normalize
 from ekt_ui.presentation import filter_orders
 from ekt_ui.state import clear_review, invalidate_changed_inputs
+from ekt_ui.workspace import reconcile_filters, render_view_tools
 
 
 def render_calculation_options():
@@ -43,12 +44,18 @@ def render_filters(rows):
     suppliers = rows.supplier_id.unique().tolist()
     categories = rows.category_id.fillna("Не указана").unique().tolist()
     scopes = rows.warehouse_scope.unique().tolist()
+    reconcile_filters(suppliers, categories, scopes)
+    supplier_options = ["Все поставщики"] + suppliers
+    saved_supplier = st.session_state.get("supplier_group", "Все поставщики")
+    if saved_supplier not in supplier_options:
+        supplier_options.append(saved_supplier)
     with st.container(key="filter_heading"):
         supplier_col, reset_col = st.columns([10, 1], vertical_alignment="center")
     with supplier_col:
-        supplier = st.segmented_control("Поставщики", ["Все поставщики"] + suppliers,
+        supplier = st.segmented_control("Поставщики", supplier_options,
                                        default="Все поставщики", required=True, key="supplier_group",
-                                       label_visibility="collapsed")
+                                       label_visibility="collapsed",
+                                       format_func=lambda value: value if value in ["Все поставщики", *suppliers] else f"{value} · нет в наборе")
     reset_col.button("Сбросить фильтры", icon=":material/filter_alt_off:", key="reset_filters",
                      help="Сбросить поиск и фильтры. Правки и выбор позиций сохраняются.", width=36,
                      on_click=reset_filters, args=(categories, scopes))
@@ -57,5 +64,6 @@ def render_filters(rows):
     category_filter = category_col.multiselect("Категории", categories, default=categories, placeholder="Категории", key="order_categories")
     scope_filter = scope_col.multiselect("Области склада", scopes, default=scopes, placeholder="Области склада", key="order_scopes")
     risk = risk_col.selectbox("Уровень риска", ["Все", "Риск дефицита", "Критично", "Пополнение", "Норма", "Нужны данные", "Риск не определён", "Ручные правки"], key="order_risk", help="Критично: прогнозируемый дефицит менее чем через 7 дней. «Риск дефицита» включает только прогнозируемый дефицит; пополнение может быть нужно для страхового запаса.")
+    render_view_tools(categories, scopes)
     return filter_orders(rows, suppliers if supplier == "Все поставщики" else [supplier],
                          scope_filter, category_filter, risk, search)

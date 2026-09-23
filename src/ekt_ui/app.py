@@ -9,6 +9,7 @@ from ekt_ui.presentation import order_grid
 from ekt_ui.quality import render_deliveries, render_quality
 from ekt_ui.results import render_calculation, render_calculation_options, render_filters
 from ekt_ui.review import current_edits, render_downloads, render_order_actions, render_order_grid
+from ekt_ui.workspace import render_preferences, render_welcome, render_workflow
 
 
 def main():
@@ -19,6 +20,7 @@ def main():
             render_imports()
         with st.expander("Параметры расчёта", expanded=False, icon=":material/tune:"):
             as_of, remove_oneoffs, compensate = render_calculation_options()
+        render_preferences()
         st.caption(":material/lock: Локальное рабочее пространство")
 
     bundle = st.session_state.get("bundle")
@@ -27,6 +29,7 @@ def main():
         with title:
             st.caption("ЭЛЕКТРОКОМПЛЕКТ / ПЛАНИРОВАНИЕ")
             st.title("Заказы поставщикам")
+            st.caption("Спрос, остатки и решения — в одном рабочем пространстве")
         with action:
             calculation = render_calculation(bundle, as_of, remove_oneoffs, compensate) if bundle is not None else None
             if bundle is None:
@@ -35,6 +38,10 @@ def main():
         render_source(bundle, as_of)
     if notice := st.session_state.pop("input_notice", None):
         st.warning(notice)
+    render_workflow(bundle, calculation)
+    if bundle is None:
+        render_welcome()
+        return
     render_kpis(calculation, bundle, as_of)
     order_tab, quality_tab, transit_tab, input_tab = st.tabs([
         ":material/receipt_long: Заказы", ":material/fact_check: Контроль данных",
