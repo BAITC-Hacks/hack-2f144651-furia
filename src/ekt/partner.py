@@ -14,7 +14,7 @@ import zipfile
 import pandas as pd
 from openpyxl import load_workbook
 from .schema import Bundle, normalize
-from .ingest import MAX_BYTES
+from .ingest import MAX_BYTES, ImportBudget, _count_workbook
 
 MONTHS = {"янв": 1, "фев": 2, "мар": 3, "апр": 4, "май": 5, "мая": 5, "июн": 6, "июл": 7, "авг": 8, "сен": 9, "окт": 10, "ноя": 11, "дек": 12}
 
@@ -91,17 +91,25 @@ def eta_value(value, report_date):
         return None
 
 
-def xlsx_members(data, filename):
+def xlsx_members(data, filename, budget=None):
+    budget = budget or ImportBudget()
+    budget.add_bytes(len(data))
     if len(data) > MAX_BYTES:
         raise ValueError("Файл больше 100 МБ")
     if filename.lower().endswith(".xlsx"):
+        budget.add_files(1)
         yield filename, data
     elif filename.lower().endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             members = [m for m in archive.infolist() if not m.is_dir()]
-            if len(members) > 100 or sum(m.file_size for m in members) > MAX_BYTES:
+            expanded = sum(m.file_size for m in members)
+            if len(members) > 100 or expanded > MAX_BYTES:
                 raise ValueError("Архив превышает лимит 100 файлов / 100 МБ")
-            for member in members:
+            budget.add_files(len(members))
+            budget.add_expanded(expanded)
+            # Preserve the established basename ordering without retaining all
+            # decompressed workbook payloads at once.
+            for member in sorted(members, key=lambda item: PurePosixPath(item.filename.replace("\\", "/")).name):
                 path = PurePosixPath(member.filename.replace("\\", "/"))
                 if path.is_absolute() or ".." in path.parts:
                     raise ValueError("Недопустимый путь в архиве")
@@ -111,7 +119,8 @@ def xlsx_members(data, filename):
         raise ValueError("Ожидается ZIP или XLSX партнёра")
 
 
-def read_partner(data, filename, supplier, report_date, confirmed_scope=None, iek_moq_meaning="unknown", inbound_base_units=False):
+def read_partner(data, filename, supplier, report_date, confirmed_scope=None,
+                 iek_moq_meaning="unknown", inbound_base_units=False, budget=None):
     if supplier not in ["IEK", "Systeme"]:
         raise ValueError("Выберите IEK или Systeme")
     report_date = pd.Timestamp(report_date)
@@ -165,13 +174,20 @@ def read_partner(data, filename, supplier, report_date, confirmed_scope=None, ie
             notes.append(f"{file}: ETA «{value}» использует год отчёта {report_date.year}, только для даты не ранее отчёта; подтвердите год.")
         return eta
 
-    for file, payload in sorted(xlsx_members(data, filename), key=lambda item: item[0]):
+    budget = budget or ImportBudget()
+    for file, payload in xlsx_members(data, filename, budget):
         count += 1
         with zipfile.ZipFile(io.BytesIO(payload)) as package:
-            if sum(m.file_size for m in package.infolist()) > MAX_BYTES:
+            expanded = sum(m.file_size for m in package.infolist())
+            if expanded > MAX_BYTES:
                 raise ValueError(f"{file}: распакованный XLSX больше 100 МБ")
-        book = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
+        budget.add_expanded(expanded)
         lower = file.lower()
+        try:
+            _count_workbook(payload, budget)
+        except ValueError as exc:
+            raise ValueError(f"{file}: {exc}") from exc
+        book = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
         try:
             if "динамик" in lower:
                 sheet = book["Лист_1"] if "Лист_1" in book.sheetnames else book.worksheets[0]

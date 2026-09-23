@@ -4,14 +4,15 @@ from collections import Counter
 import pandas as pd
 
 from .schema import Bundle, PROVENANCE, SCHEMAS, normalize
-from .ingest import merge_tables, read_canonical
+from .ingest import ImportBudget, merge_tables, read_canonical
 
 
-def import_canonical_files(files, mode="manual", previous=None):
+def import_canonical_files(files, mode="manual", previous=None, budget=None):
     """Read (filename, bytes) pairs, optionally replacing tables in a bundle."""
     combined = previous.copy() if previous is not None else Bundle(mode=mode)
+    budget = budget or ImportBudget()
     for filename, data in files:
-        combined = merge_tables(combined, read_canonical(data, filename, mode))
+        combined = merge_tables(combined, read_canonical(data, filename, mode, budget))
     return combined
 
 

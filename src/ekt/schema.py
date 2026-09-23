@@ -95,6 +95,7 @@ def normalize(bundle: Bundle) -> Bundle:
 
 def validate(bundle: Bundle) -> list[str]:
     errors = []
+    product_keys = pd.MultiIndex.from_frame(bundle["products"][["supplier_id", "sku_1c"]])
     if bundle["products"].empty:
         errors.append("products: нет товаров")
     for name, frame in bundle.tables.items():
@@ -113,8 +114,8 @@ def validate(bundle: Bundle) -> list[str]:
         if bundle.mode == "partner" and frame["data_mode"].eq("synthetic").any():
             errors.append(f"{name}: нельзя смешивать синтетику с данными партнёра")
         if name in ["sales", "monthly_sales", "stock_snapshots", "inbound", "stockouts"]:
-            unknown = frame.merge(bundle["products"][["supplier_id", "sku_1c"]], on=["supplier_id", "sku_1c"], how="left", indicator=True)
-            if unknown["_merge"].eq("left_only").any():
+            references = pd.MultiIndex.from_frame(frame[["supplier_id", "sku_1c"]])
+            if not references.isin(product_keys).all():
                 errors.append(f"{name}: есть коды без соответствия в products")
     unique = {
         "products": ["supplier_id", "sku_1c"],
