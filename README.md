@@ -5,12 +5,37 @@ Hackathon team repository for Furia
 
 Промежуточный работающий MVP: локальный расчёт, Streamlit-интерфейс, просмотр компонентов, корректировка, утверждение и экспорт CSV/XLSX. Демо **полностью синтетическое**. Реальных архивов партнёра пока нет.
 
+## Передача другим агентам
+
+Начните с [START_HERE.md](START_HERE.md). Назначения и разрешённые файлы описаны
+в [AGENT_PLAN.md](docs/AGENT_PLAN.md), реальные API — в
+[INTERFACES.md](docs/INTERFACES.md). DATA и ENGINE дорабатывают существующие
+модули параллельно; LEAD интегрирует, REVIEWER проверяет общий результат.
+Каждому исполнителю передайте одну роль, одинаковый полный SHA и соответствующий
+промпт. Не выдавайте одну область двум агентам одновременно.
+
 ## Запуск (Windows / Python 3.12)
 
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.lock
 .venv\Scripts\python.exe -m streamlit run app.py
+```
+
+## Запуск (Linux / macOS, Python 3.12)
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python -m streamlit run app.py
+```
+
+Если Python предоставлен без pip/venv, доступен вариант через установленный uv:
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r requirements.lock
+.venv/bin/python -m streamlit run app.py
 ```
 
 Откройте http://127.0.0.1:8501, нажмите «Загрузить демо» → «Рассчитать предложения». Просмотрите объяснение, измените количество с причиной, утвердите и скачайте файл. Ноль поддерживается как ручное решение. Изменение входов или корректировки отменяет прежнее утверждение.
@@ -23,7 +48,10 @@ py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pytest -q
 ```
 
-Это промежуточная версия. Текущие результаты, известный непройденный тест и следующий шаг: [docs/STATUS.md](docs/STATUS.md).
+На Linux/macOS команда проверки: `.venv/bin/python -m pytest -q`.
+Это промежуточная версия. Фактические результаты, ограничения и следующий шаг:
+[docs/STATUS.md](docs/STATUS.md). Зелёные тесты на синтетике не подтверждают
+проверку оригинальных архивов или точность прогноза на данных партнёра.
 
 ## Входы и ограничения
 

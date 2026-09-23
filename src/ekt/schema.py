@@ -20,7 +20,7 @@ SCHEMAS = {
     "growth_plan": ["supplier_id", "sku_1c", "category_id", "start_date", "end_date", "extra_growth_rate", "source"],
     "seasonal_prior": ["supplier_id", "category_id", "month_of_year", "factor", "known_as_of", "source"],
 }
-NUMBERS = {"quantity_signed", "qty_net", "on_hand", "reserved", "available", "qty_base_unit", "lead_time_days", "review_days", "safety_days", "min_order_qty", "order_multiple", "extra_growth_rate", "factor", "month_of_year"}
+NUMBERS = {"quantity_signed", "qty_net", "on_hand", "reserved", "available", "qty_base_unit", "lead_time_days", "review_days", "safety_days", "min_order_qty", "order_multiple", "unconfirmed_moq", "extra_growth_rate", "factor", "month_of_year"}
 DATES = {"date", "month", "coverage_start", "coverage_end", "as_of", "eta", "start_date", "end_date", "known_as_of"}
 REQUIRED = {
     "products": ["supplier_id", "sku_1c", "name"],
