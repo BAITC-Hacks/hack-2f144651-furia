@@ -1,9 +1,8 @@
 name: EKT checks
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Automatic runs are paused while the repository owner's billing lock blocks jobs.
+  # After the owner unlocks Actions, restore push (main) and pull_request triggers.
   workflow_dispatch:
 
 permissions:
