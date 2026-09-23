@@ -1,0 +1,4 @@
+{"kind": "start", "sku_count": 100, "sales_rows": 36500, "days": 365, "python": "3.12.14", "platform": "Windows"}
+{"phase": "generate", "seconds": 0.2191, "memory": {"rss_mib": 109.05, "peak_rss_mib": 111.57}}
+{"kind": "concurrent_calculation", "threads": 2, "jobs": [{"job": 0, "seconds": 16.3275}, {"job": 1, "seconds": 16.4587}], "wall_seconds": 16.4682, "memory": {"rss_mib": 139.97, "peak_rss_mib": 157.01}}
+{"kind": "supervisor", "sku_count": 100, "returncode": 0, "stopped": null, "wall_seconds": 18.491, "observed_peak_rss_mib": 157.01, "error_tail": null}

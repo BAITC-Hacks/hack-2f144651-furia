@@ -1,0 +1,57 @@
+{"kind": "start", "sku_count": 10, "sales_rows": 3650, "days": 365, "python": "3.12.14", "platform": "Windows"}
+{"phase": "generate", "seconds": 0.1291, "memory": {"rss_mib": 96.34, "peak_rss_mib": 96.34}}
+{"phase": "zip_input", "seconds": 0.0308, "memory": {"rss_mib": 98.75, "peak_rss_mib": 99.87}}
+{"kind": "size", "zip_bytes": 37497, "rows": 3682}
+{"phase": "canonical_import", "seconds": 0.2226, "memory": {"rss_mib": 100.55, "peak_rss_mib": 106.73}}
+{"phase": "validate", "seconds": 0.0562, "memory": {"rss_mib": 101.27, "peak_rss_mib": 106.73}}
+{"phase": "calculate", "seconds": 0.8099, "memory": {"rss_mib": 102.82, "peak_rss_mib": 106.73}}
+{"phase": "approve", "seconds": 0.0119, "memory": {"rss_mib": 102.85, "peak_rss_mib": 106.73}}
+{"phase": "export_frame", "seconds": 0.0097, "memory": {"rss_mib": 102.85, "peak_rss_mib": 106.73}}
+{"phase": "order_grid", "seconds": 0.0141, "memory": {"rss_mib": 102.96, "peak_rss_mib": 106.73}}
+{"phase": "input_fingerprint", "seconds": 0.079, "memory": {"rss_mib": 104.97, "peak_rss_mib": 106.73}}
+{"phase": "csv_export", "seconds": 0.0102, "memory": {"rss_mib": 104.99, "peak_rss_mib": 106.73}}
+{"phase": "xlsx_export", "seconds": 0.0742, "memory": {"rss_mib": 105.29, "peak_rss_mib": 106.73}}
+{"phase": "zip_current_inputs", "seconds": 0.0257, "memory": {"rss_mib": 105.8, "peak_rss_mib": 106.73}}
+{"kind": "output", "csv_bytes": 15420, "xlsx_bytes": 9691, "positions": 10}
+{"phase": "ui_initial_render", "seconds": 2.9088, "memory": {"rss_mib": 167.36, "peak_rss_mib": 167.46}}
+{"phase": "ui_filter_rerun", "seconds": 0.5807, "memory": {"rss_mib": 167.59, "peak_rss_mib": 169.79}}
+{"kind": "complete", "memory": {"rss_mib": 167.59, "peak_rss_mib": 169.79}}
+{"kind": "supervisor", "sku_count": 10, "returncode": 0, "stopped": null, "wall_seconds": 11.064, "observed_peak_rss_mib": 169.79, "error_tail": null}
+{"kind": "start", "sku_count": 100, "sales_rows": 36500, "days": 365, "python": "3.12.14", "platform": "Windows"}
+{"phase": "generate", "seconds": 0.246, "memory": {"rss_mib": 109.03, "peak_rss_mib": 111.41}}
+{"phase": "zip_input", "seconds": 0.2702, "memory": {"rss_mib": 115.06, "peak_rss_mib": 125.51}}
+{"kind": "size", "zip_bytes": 357150, "rows": 36802}
+{"phase": "canonical_import", "seconds": 0.4568, "memory": {"rss_mib": 126.67, "peak_rss_mib": 153.91}}
+{"phase": "validate", "seconds": 0.063, "memory": {"rss_mib": 127.79, "peak_rss_mib": 153.91}}
+{"phase": "calculate", "seconds": 6.7904, "memory": {"rss_mib": 126.3, "peak_rss_mib": 153.91}}
+{"phase": "approve", "seconds": 0.013, "memory": {"rss_mib": 126.37, "peak_rss_mib": 153.91}}
+{"phase": "export_frame", "seconds": 0.0531, "memory": {"rss_mib": 126.37, "peak_rss_mib": 153.91}}
+{"phase": "order_grid", "seconds": 0.0623, "memory": {"rss_mib": 126.49, "peak_rss_mib": 153.91}}
+{"phase": "input_fingerprint", "seconds": 0.2187, "memory": {"rss_mib": 129.15, "peak_rss_mib": 157.09}}
+{"phase": "csv_export", "seconds": 0.017, "memory": {"rss_mib": 129.98, "peak_rss_mib": 157.09}}
+{"phase": "xlsx_export", "seconds": 0.1726, "memory": {"rss_mib": 130.44, "peak_rss_mib": 157.09}}
+{"phase": "zip_current_inputs", "seconds": 0.222, "memory": {"rss_mib": 132.62, "peak_rss_mib": 157.09}}
+{"kind": "output", "csv_bytes": 149256, "xlsx_bytes": 30765, "positions": 100}
+{"phase": "ui_initial_render", "seconds": 2.644, "memory": {"rss_mib": 191.41, "peak_rss_mib": 214.75}}
+{"phase": "ui_filter_rerun", "seconds": 1.0485, "memory": {"rss_mib": 198.16, "peak_rss_mib": 220.31}}
+{"kind": "complete", "memory": {"rss_mib": 198.16, "peak_rss_mib": 220.31}}
+{"kind": "supervisor", "sku_count": 100, "returncode": 0, "stopped": null, "wall_seconds": 14.877, "observed_peak_rss_mib": 220.31, "error_tail": null}
+{"kind": "start", "sku_count": 500, "sales_rows": 182500, "days": 365, "python": "3.12.14", "platform": "Windows"}
+{"phase": "generate", "seconds": 0.5096, "memory": {"rss_mib": 163.36, "peak_rss_mib": 177.81}}
+{"phase": "zip_input", "seconds": 1.0914, "memory": {"rss_mib": 167.94, "peak_rss_mib": 219.49}}
+{"kind": "size", "zip_bytes": 1784149, "rows": 184002}
+{"phase": "canonical_import", "seconds": 1.258, "memory": {"rss_mib": 202.51, "peak_rss_mib": 303.41}}
+{"phase": "validate", "seconds": 0.088, "memory": {"rss_mib": 202.1, "peak_rss_mib": 303.41}}
+{"phase": "calculate", "seconds": 35.1947, "memory": {"rss_mib": 220.93, "peak_rss_mib": 353.55}}
+{"phase": "approve", "seconds": 0.0179, "memory": {"rss_mib": 221.16, "peak_rss_mib": 353.55}}
+{"phase": "export_frame", "seconds": 0.0155, "memory": {"rss_mib": 221.16, "peak_rss_mib": 353.55}}
+{"phase": "order_grid", "seconds": 0.2969, "memory": {"rss_mib": 221.76, "peak_rss_mib": 353.55}}
+{"phase": "input_fingerprint", "seconds": 0.8023, "memory": {"rss_mib": 227.37, "peak_rss_mib": 375.65}}
+{"phase": "csv_export", "seconds": 0.0413, "memory": {"rss_mib": 228.44, "peak_rss_mib": 375.65}}
+{"phase": "xlsx_export", "seconds": 0.5284, "memory": {"rss_mib": 228.84, "peak_rss_mib": 375.65}}
+{"phase": "zip_current_inputs", "seconds": 1.0589, "memory": {"rss_mib": 230.55, "peak_rss_mib": 375.65}}
+{"kind": "output", "csv_bytes": 745256, "xlsx_bytes": 123387, "positions": 500}
+{"phase": "ui_initial_render", "seconds": 4.5763, "memory": {"rss_mib": 288.04, "peak_rss_mib": 431.79}}
+{"phase": "ui_filter_rerun", "seconds": 3.1215, "memory": {"rss_mib": 291.4, "peak_rss_mib": 445.67}}
+{"kind": "complete", "memory": {"rss_mib": 288.71, "peak_rss_mib": 445.67}}
+{"kind": "supervisor", "sku_count": 500, "returncode": 0, "stopped": null, "wall_seconds": 51.427, "observed_peak_rss_mib": 445.67, "error_tail": null}
