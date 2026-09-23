@@ -17,6 +17,41 @@ class Calculation:
     config: dict
 
 
+def classify_risk(row, as_of):
+    """Classify a canonical calculation row without changing its recommendation.
+
+    Data warnings are independent of urgency. A positive order need not imply a
+    deficit; a zero order can still have an interim deficit before an arrival.
+    Unknown/unavailable values remain explicit rather than becoming zero/safe.
+    """
+    cutoff = pd.Timestamp(as_of)
+    if pd.isna(cutoff):
+        raise ValueError("Нужна дата расчёта для классификации риска")
+    cutoff = cutoff.normalize()
+    row = {} if row is None else row
+    quantity = pd.to_numeric(row.get("recommended_qty"), errors="coerce")
+    result = {"risk_level": "unknown", "days_to_risk": None,
+              "calculation_status": "unavailable", "order_required": None}
+    if pd.isna(quantity) or not np.isfinite(quantity) or quantity < 0:
+        return result
+    result.update(calculation_status="calculated", order_required=bool(quantity > 0))
+    raw_date = row.get("risk_date")
+    dated = pd.notna(raw_date) and str(raw_date).strip() != ""
+    if dated:
+        risk_date = pd.to_datetime(raw_date, errors="coerce")
+        if pd.isna(risk_date):
+            return result
+        days = int((risk_date.normalize() - cutoff).days)
+        result.update(risk_level="critical" if days < 7 else "risk", days_to_risk=days)
+    else:
+        urgency = row.get("urgency")
+        if isinstance(urgency, str) and urgency == "Риск дефицита":
+            result["risk_level"] = "risk"
+        elif isinstance(urgency, str) and urgency in ("Плановый заказ", "Запаса достаточно"):
+            result["risk_level"] = "none"
+    return result
+
+
 def order_quantity(demand, safety, available, inbound, multiple, minimum=0):
     values = [demand, safety, available, inbound, multiple, minimum]
     if not all(np.isfinite(values)) or multiple <= 0 or minimum < 0 or min(demand, safety, inbound) < 0:

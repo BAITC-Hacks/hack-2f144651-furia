@@ -217,3 +217,25 @@ def test_local_canonical_cli_runs_outside_pytest_pythonpath(make_bundle, tmp_pat
     assert report["source_data_modes"] == ["synthetic"]
     assert first_fold(report)["scores"]["production_raw_available"]["production"]["mae"] == 0
     assert "src/ekt/forecast.py" in report["reproducibility"]["source_sha256"]
+
+
+def test_quality_json_coverage_and_pooled_scores_use_observation_weights(make_bundle):
+    bundle = make_bundle("2026-01-01", "2026-01-22", values=[10] * 10 + [20] * 12)
+    report = walk_forward(bundle, ["2026-01-10", "2026-01-20"], 4)
+    early, late = report["series"][0]["folds"]
+    # Four errors of 10, then two errors of 5. Two future facts are unknown.
+    assert (early["n_observed"], early["n_missing"], early["n_available"], early["n_common"]) == (4, 0, 4, 0)
+    assert (late["n_observed"], late["n_missing"], late["n_available"], late["n_common"]) == (2, 2, 2, 0)
+    assert [p["actual"] for p in late["predictions"]] == [20, 20, None, None]
+    for model in ("production", "raw_mean"):
+        score = report["series"][0]["summary"]["production_raw_available"][model]
+        assert score["n"] == 6
+        assert score["absolute_error"] == pytest.approx(50)
+        assert score["absolute_actual"] == 120
+        assert score["mae"] == pytest.approx(50 / 6)
+        assert score["wape"] == pytest.approx(50 / 120)
+    common = report["series"][0]["summary"]["common_available"]["production"]
+    assert common["n"] == 0
+    assert common["undefined_reason"] == "no_observations"
+    assert common["mae"] is None and common["wape"] is None
+    json.dumps(report, allow_nan=False)
