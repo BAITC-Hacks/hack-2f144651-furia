@@ -28,9 +28,9 @@ def publish_edits(calculation, edits):
 
 def grid_style(frame):
     style = pd.DataFrame("", index=frame.index, columns=frame.columns)
-    colors = {"Критично": "#fff0f3", "Нужны данные": "#fff6dc", "Риск не определён": "#fff6dc", "Пополнение": "#eef3ff", "Норма": "#eaf7f1"}
-    style["priority"] = frame.priority.map(lambda value: f"background-color: {colors[value]}; color: #303846; font-weight: 600")
-    style.loc[frame.manual_edit.ne(""), "manual_edit"] = "background-color: #fff6dc; color: #8b5a00"
+    # Keep native theme colors: fixed light cell fills break dark-mode contrast.
+    style["priority"] = "font-weight: 600"
+    style.loc[frame.manual_edit.ne(""), "manual_edit"] = "font-weight: 600"
     return style
 
 
@@ -58,16 +58,17 @@ def render_order_grid(calculation, visible):
     if visible.empty:
         st.info("Нет позиций по выбранным условиям. Выбор позиций для экспорта сохранён.")
         return
-    columns = ["selected", "supplier_id", "sku_1c", "name", "priority", "unit"]
+    columns = ["selected", "supplier_id", "sku_1c", "name", "warehouse_scope", "priority", "unit"]
     if view == "Расчёт":
         columns += ["available_stock", "inbound_within_horizon", "expected_demand_horizon"]
     columns += ["recommended_qty", "adjusted_qty", "reason", "manual_edit", "history", "row_id"]
     frame = visible[columns].reset_index(drop=True)
     key = f"review_{st.session_state.calc_version}_{st.session_state.get('review_revision', 0)}_{view}"
     st.session_state.review_editor_key = key
+    row_height = 32 if st.session_state.get("table_density") == "Компактная" else 44
     edited = st.data_editor(
         frame.style.apply(grid_style, axis=None), hide_index=True, width="stretch",
-        height=min(500, max(150, 42 * len(frame) + 40)), row_height=42, key=key,
+        height=min(500, max(150, row_height * len(frame) + 40)), row_height=row_height, key=key,
         disabled=[name for name in columns if name not in ("selected", "adjusted_qty", "reason")],
         column_config={
             "row_id": None,
@@ -85,6 +86,7 @@ def render_order_grid(calculation, visible):
             "manual_edit": st.column_config.TextColumn("Правка", width=110),
             "reason": st.column_config.TextColumn("Причина изменения", width=180),
             "supplier_id": st.column_config.TextColumn("Поставщик", width=90),
+            "warehouse_scope": st.column_config.TextColumn("Область склада", width=130),
         },
     )
     merged = merge_visible_edits(edits, edited[EDIT_COLUMNS])

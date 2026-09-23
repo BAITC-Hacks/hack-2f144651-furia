@@ -12,6 +12,8 @@
 
 | ID / статус | Владелец | Результат и файлы | Зависимости / приёмка |
 |---|---|---|---|
+| AUD-02 / done | Интегратор Codex, сессия `01a0cd92-b548-70f3-bd4d-5ecb81011184` | Сверка исходного ТЗ, архивов по ссылкам и замечаний AUD-01 | [Назначение](tasks/AUD-02.md), [отчёт](audit/REQUIREMENTS_RECHECK.md); без исправления продуктового кода |
+| UI-02 / done | Frontend и интегратор Codex `/root`, сессия `01a0ce1a-209b-73c1-9da8-684b13a451e1` | Light/dark, дизайн по Inspo, фильтры и удобства | [Назначение](tasks/UI-02.md); существующий API, без изменения формул |
 | AUD-01 / done | Интегратор Codex + read-only Reviewer Nietzsche | Аудит работоспособности, нагрузки, дефекты и промпты трём направлениям | [Назначение](tasks/AUD-01.md), [отчёт](audit/REPORT.md); исправления не выполнялись |
 | AUD-BE-01 / done (код); оригиналы blocked | Backend Codex `/root`, сессия `01a0ce22-94d1-77d1-b48b-8900c194f46d`; Git/общие файлы — интегратор AUD-LOG-01 | D01/D02/D11: экспорт, строковые коды XLSX, ресурсные бюджеты; D08 membership в schema | [Назначение и handoff](handoffs/backend.md#aud-be-01-назначение-результат-и-передача); 199 passed / 20 skipped targeted, общий прогон 419 passed / 20 skipped; UI-перехват XLSX передан AUD-FE-01 |
 | AUD-FE-01 / planned | Frontend, исполнитель следующего этапа не назначен | D01/D09/D10/D11/D12: локализация ошибок, склады, лёгкий rerun, кеш и тексты | [Промпт](../prompts/AUDIT_FRONTEND.md); совместный контракт D05 с Logic |

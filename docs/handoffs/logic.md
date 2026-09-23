@@ -9,6 +9,8 @@
 - Базовый полный SHA: `54f9bff8ef59f2866cfe680d5c3ace91737f5efd`.
 - Передача: общее дерево; итоговый коммит после публикации определяется командой
   `git log -1 -- docs/handoffs/logic.md`.
+- Коммит кода Logic: `344fbc5863958c16c1ada7375cab3bd3a3c32d62`.
+  Отдельная передача Backend/D08: `5f1ae292654f83d33b04570520d966ee963d1d59`.
 - Файлы Logic: `src/ekt/{demand,forecast,engine,review}.py`,
   `tests/test_{demand,forecast,engine_regressions,review}.py`,
   `tests/logic/test_audit_review_integrity.py`, `docs/METHODOLOGY.md`, этот handoff.
@@ -68,7 +70,9 @@
 | `tests/logic/test_audit_review_integrity.py` до дополнительных исправлений целостности | Воспроизвести уязвимость подписи и fingerprint | 9 failed, 2 passed |
 | `.venv\Scripts\python.exe -m pytest tests/logic/test_audit_review_integrity.py tests/test_review.py -q` | Новые и действующие правила review проходят | После исправлений: 39 passed, 0.57 с |
 | `.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider` | Полный набор без регрессий | 419 passed, 20 skipped, 122.47 с; общее дерево Logic + переданный Backend/D08 |
+| Та же команда после интеграции `origin/main` с UI-02/AUD-02 | Совместимость обеих сторон | 424 passed, 20 skipped, 139.86 с |
 | `.venv\Scripts\python.exe scripts/smoke.py` | Расчёт → ручной ноль → утверждение → экспорт | 4 synthetic позиции, 2 поставщика, manual_zero=0, approved; CSV 6585 / XLSX 8634 байт |
+| Smoke после интеграции `origin/main` | Сохранён рабочий сценарий | 4 позиции, 2 поставщика, manual_zero=0, approved; CSV 6585 / XLSX 8636 байт |
 | `.venv\Scripts\python.exe -m pip check` | Совместимые зависимости | No broken requirements found |
 | Два запуска `scripts/evaluate_forecast.py --demo --output <локальный JSON>` | Детерминизм синтетической оценки | Код 0 дважды; полные JSON идентичны, все 24 среза доступны |
 | `.venv\Scripts\python.exe docs/audit/reproduce.py` | Старые примеры больше не воспроизводят ложное утверждение | Исторический скрипт останавливается на ожидаемом D05 `ValueError` об отсутствии причины; сам скрипт не меняли. Отдельные причинные тесты проверяют исправленное поведение |
@@ -150,7 +154,11 @@ SHA-256 обоих: `3840d9f674d6e0469ddcfcdc024ca19573798cfe1d13b234ba705d2a0fc
 - Реальные данные и браузерный путь этого этапа не проверены. Деплой,
   официальная сдача и отправка заказов не выполнялись.
 - Перед публикацией fetch обнаружил `74341c6387b28a3578aa6a5b6a36cd579a248041`
-  с UI-02 и AUD-02. Интегратор сохраняет Logic и Backend отдельными коммитами,
-  объединяет remote без переписывания истории и повторяет затронутые проверки.
+  с UI-02 и AUD-02. Logic и Backend сохранены отдельными коммитами;
+  remote объединён без переписывания истории. Единственный конфликт в STATUS
+  разрешён сохранением обеих сторон; продуктовый код автоматически совместился.
+  Повторные полный pytest (424 passed / 20 skipped) и smoke успешны.
+  Независимый Reviewer подтвердил сохранность UI/документов remote и неизменность
+  ядра относительно отдельных Logic/Backend коммитов.
   Подтверждённый удалённый SHA сообщается после push; итоговый коммит документа
   определяется через Git без самоотсылочного SHA в файле.
