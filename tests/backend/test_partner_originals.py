@@ -4,11 +4,14 @@ Run with EKT_PARTNER_ARCHIVE_DIR pointing to a directory containing IEK.zip and
 Systeme.zip. The report date below is the explicit date of these test reports,
 not an assertion that their balances are current today. Failures deliberately
 omit source values, filenames, row numbers and exception details.
+Known source errors are verified independently before a failed full import is
+accepted as a safe rejection. Dependent Bundle checks then remain explicitly
+skipped; these skips do not mean that the original data passed acceptance.
 """
 from __future__ import annotations
 
 from collections import defaultdict
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from contextlib import closing, contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -141,7 +144,8 @@ class OriginalCase:
     signed_sales: dict = field(default_factory=dict)
     moq_samples: object = None
     stock_payload: bytes = b""
-    moq_payload: bytes = b""
+    quantity_payloads: dict = field(default_factory=dict)
+    quantity_sheets: dict = field(default_factory=dict)
 
     def __repr__(self):
         return f"OriginalCase({self.supplier})"
@@ -150,8 +154,85 @@ class OriginalCase:
         return self.cells[(row.source_file, row.source_sheet, int(row.source_row))]
 
 
+@dataclass(repr=False)
+class PrivateArchive:
+    supplier: str
+    data: bytes
+    members: dict
+    excel_errors: list = field(default_factory=list)
+    quantity_candidates: dict = field(default_factory=dict)
+    conflicts: dict = field(default_factory=dict)
+
+    def __repr__(self):
+        return f"PrivateArchive({self.supplier})"
+
+
+@dataclass(repr=False)
+class ImportAttempt:
+    archive: PrivateArchive
+    bundle: object = None
+    error: str | None = None
+    blocker: str | None = None
+
+    def __repr__(self):
+        return f"ImportAttempt({self.archive.supplier})"
+
+
+def _quantity_source_conflicts(archive):
+    """Read only source rule cells, without using the adapter's parsing helpers."""
+    candidates = defaultdict(list)
+    for filename, payload in sorted(archive.members.items()):
+        kind = _kind(filename)
+        if kind != "moq" and not (kind == "monthly_sales" and archive.supplier == "Systeme"):
+            continue
+        with closing(load_workbook(io.BytesIO(payload), read_only=True, data_only=True)) as book:
+            sheet = book["Лист_1"] if kind == "monthly_sales" and "Лист_1" in book.sheetnames else book.worksheets[0]
+            sku_column = _sku_column(kind, archive.supplier)
+            quantity_column = 3 if kind == "monthly_sales" else 4
+            for number, cells in enumerate(sheet.iter_rows(min_row=2, max_col=5), 2):
+                sku = _code(cells[sku_column].value)
+                if not sku or sku.lower().startswith(("итого", "всего", "номенклат", "код")):
+                    continue
+                cell = cells[quantity_column]
+                if cell.data_type == "e":
+                    _check(archive.supplier == "IEK" and kind == "moq", archive.supplier, "source", "unexpected_excel_error")
+                    archive.excel_errors.append((filename, cell.value))
+                    continue
+                quantity = _number(cell.value)
+                if quantity is None:
+                    continue
+                _check(quantity.is_finite(), archive.supplier, "source", "finite_quantity_rule")
+                candidates[sku].append((filename, sheet.title, number, float(quantity)))
+    archive.quantity_candidates = dict(candidates)
+    archive.conflicts = {
+        sku: rows for sku, rows in candidates.items()
+        if len({row[3] for row in rows}) > 1
+    }
+
+
+def _matches_source_blocker(archive, message):
+    for filename, value in archive.excel_errors:
+        expected = f"{filename}: Некорректное числовое значение: {value!r}; пустая ячейка и ошибка не равнозначны"
+        if message == expected:
+            return "confirmed Excel error in original IEK MOQ; full Bundle acceptance blocked"
+    rule = "unconfirmed_moq" if archive.supplier == "IEK" else "order_multiple"
+    for sku, rows in archive.conflicts.items():
+        for first in rows:
+            for second in rows:
+                if first[3] == second[3]:
+                    continue
+                sources = "; ".join(f"{file}/{sheet}:{row}={quantity!r}" for file, sheet, row, quantity in (first, second))
+                expected = (
+                    f"Конфликт правила закупки {archive.supplier} / {sku} / {rule}: {sources}. "
+                    "Приоритет источников не подтверждён; уточните значение, импорт остановлен."
+                )
+                if message == expected:
+                    return "confirmed conflicting original quantity rules; full Bundle acceptance blocked"
+    return None
+
+
 @pytest.fixture(scope="module", params=("IEK", "Systeme"))
-def original(request):
+def private_archive(request):
     directory = os.environ.get("EKT_PARTNER_ARCHIVE_DIR")
     if not directory:
         pytest.skip("Private originals omitted; set EKT_PARTNER_ARCHIVE_DIR to opt in")
@@ -160,20 +241,59 @@ def original(request):
         archive_path = Path(directory) / f"{supplier}.zip"
         _check(archive_path.is_file(), supplier, "archive", "missing_private_archive")
         data = archive_path.read_bytes()
-        # Import exactly once per supplier/module. Suppress any accidental library
-        # output, including in a failing run; private data stays in memory.
-        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            bundle = read_partner(
-                data, archive_path.name, supplier, REPORT_DATE,
-                confirmed_scope=None, iek_moq_meaning="unknown", inbound_base_units=False,
-            )
-        case = OriginalCase(supplier, bundle)
+        members = {}
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             for member in archive.infolist():
                 name = PurePosixPath(member.filename.replace("\\", "/")).name
                 if not member.is_dir() and name.lower().endswith(".xlsx") and not name.startswith("~$"):
-                    _check(name not in case.members, supplier, "archive", "duplicate_filename")
-                    case.members[name] = archive.read(member)
+                    _check(name not in members, supplier, "archive", "duplicate_filename")
+                    members[name] = archive.read(member)
+        source = PrivateArchive(supplier, data, members)
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            _quantity_source_conflicts(source)
+    return source
+
+
+@pytest.fixture(scope="module")
+def import_attempt(private_archive):
+    source = private_archive
+    attempt = ImportAttempt(source)
+    with _private_failure(source.supplier, "import"):
+        # Import the untouched complete archive once per supplier. Unexpected
+        # errors are failures, even when some other source defect is known.
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            try:
+                attempt.bundle = read_partner(
+                    source.data, f"{source.supplier}.zip", source.supplier, REPORT_DATE,
+                    confirmed_scope=None, iek_moq_meaning="unknown", inbound_base_units=False,
+                )
+            except ValueError as exc:
+                attempt.error = str(exc)
+        if attempt.error is not None:
+            attempt.blocker = _matches_source_blocker(source, attempt.error)
+            _check(attempt.blocker is not None, source.supplier, "import", "unexpected_rejection")
+        else:
+            _check(not source.excel_errors and not source.conflicts, source.supplier, "import", "unsafe_acceptance_of_source_error")
+    return attempt
+
+
+def test_original_import_accepts_only_consistent_quantity_sources(import_attempt):
+    attempt = import_attempt
+    supplier = attempt.archive.supplier
+    if attempt.blocker:
+        _check(attempt.bundle is None and attempt.error is not None, supplier, "import", "blocked_without_partial_bundle")
+    else:
+        _check(attempt.bundle is not None and attempt.error is None, supplier, "import", "consistent_sources_imported")
+
+
+@pytest.fixture(scope="module")
+def original(import_attempt):
+    if import_attempt.blocker:
+        pytest.skip(import_attempt.blocker)
+    supplier = import_attempt.archive.supplier
+    with _private_failure(supplier, "fixture"):
+        bundle = import_attempt.bundle
+        case = OriginalCase(supplier, bundle, members=dict(import_attempt.archive.members))
         wanted = defaultdict(lambda: defaultdict(set))
         for table in ("products", "sales", "monthly_sales", "stock_snapshots", "inbound", "seasonal_prior"):
             frame = bundle[table]
@@ -181,8 +301,14 @@ def original(request):
             for row in case.samples[table].itertuples():
                 wanted[row.source_file][row.source_sheet].update((1, 2, int(row.source_row)))
         products = bundle["products"]
-        _check("quantity_rule_source" in products, supplier, "products", "moq_provenance")
-        case.moq_samples = _sample(products.loc[products.quantity_rule_source.notna()])
+        if import_attempt.archive.quantity_candidates:
+            _check("quantity_rule_source" in products, supplier, "products", "quantity_rule_provenance_present")
+            rule = "unconfirmed_moq" if supplier == "IEK" else "order_multiple"
+            _check(rule in products, supplier, "products", "quantity_rule_values_present")
+            known = products.loc[products[rule].notna()]
+            _check(set(known.sku_1c) == set(import_attempt.archive.quantity_candidates), supplier, "products", "quantity_rule_skus_preserved")
+            _check(known.quantity_rule_source.notna().all(), supplier, "products", "quantity_rule_sources_preserved")
+        case.moq_samples = _sample(products.loc[products.quantity_rule_source.notna()]) if "quantity_rule_source" in products else products.iloc[:0]
         moq_rows = defaultdict(set)
         for row in case.moq_samples.itertuples():
             filename, source_row = row.quantity_rule_source.rsplit(":", 1)
@@ -192,14 +318,16 @@ def original(request):
         for filename, payload in case.members.items():
             if _kind(filename) == "historical_stock":
                 case.stock_payload = payload
-            elif _kind(filename) == "moq":
-                case.moq_payload = payload
+            elif _kind(filename) == "moq" or (_kind(filename) == "monthly_sales" and supplier == "Systeme"):
+                case.quantity_payloads[filename] = payload
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                 book = load_workbook(io.BytesIO(payload), read_only=True, data_only=True)
             try:
                 case.sheets[filename] = tuple(book.sheetnames)
                 if filename in moq_rows:
-                    wanted[filename][book.worksheets[0].title].update({1, *moq_rows[filename]})
+                    quantity_sheet = "Лист_1" if _kind(filename) == "monthly_sales" and "Лист_1" in book.sheetnames else book.worksheets[0].title
+                    case.quantity_sheets[filename] = quantity_sheet
+                    wanted[filename][quantity_sheet].update({1, *moq_rows[filename]})
                 for sheet_name, row_numbers in wanted[filename].items():
                     sheet = book[sheet_name]
                     for number, values in enumerate(sheet.iter_rows(max_row=max(row_numbers), values_only=True), 1):
@@ -259,32 +387,30 @@ def test_original_product_and_moq_samples(original):
             source = case.raw(row)
             column = _sku_column(case.members[row.source_file], supplier)
             _check(isinstance(row.sku_1c, str) and row.sku_1c == _code(source[column]), supplier, "products", "source_sku")
-        _check(not case.moq_samples.empty, supplier, "products", "moq_samples")
-        filename = next(name for name, kind in case.members.items() if kind == "moq")
-        isolated = read_partner(case.moq_payload, filename, supplier, REPORT_DATE)
-        products = isolated["products"].set_index("sku_1c")
+        isolated_products = {}
         field = "unconfirmed_moq" if supplier == "IEK" else "order_multiple"
         for row in case.moq_samples.itertuples():
             filename, number = row.quantity_rule_source.rsplit(":", 1)
-            source = case.cells[(filename, case.sheets[filename][0], int(number))]
-            _check(row.sku_1c == _code(source[_sku_column("moq", supplier)]), supplier, "products", "moq_source_sku")
-            _check(_same_number(products.loc[row.sku_1c, field], source[4]), supplier, "products", "standalone_moq_source_quantity")
+            if filename not in isolated_products:
+                isolated = read_partner(case.quantity_payloads[filename], filename, supplier, REPORT_DATE)
+                isolated_products[filename] = isolated["products"].set_index("sku_1c")
+            source = case.cells[(filename, case.quantity_sheets[filename], int(number))]
+            kind = case.members[filename]
+            _check(kind in ("moq", "monthly_sales"), supplier, "products", "quantity_source_kind")
+            _check(row.sku_1c == _code(source[_sku_column(kind, supplier)]), supplier, "products", "moq_source_sku")
+            quantity_column = 3 if kind == "monthly_sales" else 4
+            _check(_same_number(isolated_products[filename].loc[row.sku_1c, field], source[quantity_column]), supplier, "products", "standalone_moq_source_quantity")
 
 
-def test_original_merged_moq_provenance(original, request):
+def test_original_merged_moq_provenance(original):
     case, supplier = original, original.supplier
-    if supplier == "Systeme":
-        # DATA/D3: monthly order_multiple overwrites MOQ while retaining the
-        # MOQ source reference. Keep this defect visible until its owner fixes it.
-        request.applymarker(pytest.mark.xfail(
-            strict=True, reason="DATA/D3: merged Systeme MOQ provenance is stale",
-        ))
     with _private_failure(supplier, "products"):
         field = "unconfirmed_moq" if supplier == "IEK" else "order_multiple"
         for row in case.moq_samples.itertuples():
             filename, number = row.quantity_rule_source.rsplit(":", 1)
-            source = case.cells[(filename, case.sheets[filename][0], int(number))]
-            _check(_same_number(getattr(row, field), source[4]), supplier, "products", "merged_moq_source_quantity")
+            source = case.cells[(filename, case.quantity_sheets[filename], int(number))]
+            quantity_column = 3 if case.members[filename] == "monthly_sales" else 4
+            _check(_same_number(getattr(row, field), source[quantity_column]), supplier, "products", "merged_moq_source_quantity")
 
 
 def test_original_sales_source_samples_and_signs(original):
