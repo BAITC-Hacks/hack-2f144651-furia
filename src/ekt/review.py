@@ -18,13 +18,31 @@ def initial_edits(rows):
 
 
 def reviewed_rows(calculation, edits):
-    frame = calculation.rows.merge(edits, on="row_id", validate="one_to_one")
+    required = ["row_id", "selected", "adjusted_qty", "reason"]
+    missing = [name for name in required if name not in edits]
+    if missing or edits.columns.duplicated().any():
+        raise ValueError("Неверные столбцы правок: нужны row_id, selected, adjusted_qty, reason без повторов")
+    for label, rows in (("расчёт", calculation.rows), ("правки", edits)):
+        if "row_id" not in rows or not rows["row_id"].map(
+            lambda value: isinstance(value, str) and bool(value.strip())
+        ).all() or rows["row_id"].duplicated().any():
+            raise ValueError(f"{label}: row_id должны быть непустыми уникальными строками")
+    expected, received = set(calculation.rows.row_id), set(edits.row_id)
+    if expected != received:
+        raise ValueError(f"row_id правок не совпадают с расчётом: отсутствуют {len(expected - received)}, неизвестны {len(received - expected)}. Передайте все позиции, включая невыбранные.")
+    if not edits["selected"].map(lambda value: pd.isna(value) or isinstance(value, (bool, np.bool_))).all():
+        raise ValueError("selected: допустимы только true/false или пустое значение")
+    frame = calculation.rows.merge(edits[required], on="row_id", validate="one_to_one")
     frame = frame.loc[frame["selected"].fillna(False)].copy()
     if frame.empty:
         return frame
     if frame["recommended_qty"].isna().any():
         raise ValueError("Нельзя экспортировать выбранные позиции с незавершённым расчётом")
     frame["final_qty"] = frame["adjusted_qty"].where(frame["adjusted_qty"].notna(), frame["recommended_qty"])
+    try:
+        frame["final_qty"] = pd.to_numeric(frame["final_qty"], errors="raise").astype(float)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Итоговое количество должно быть числом") from exc
     if (~np.isfinite(frame["final_qty"]) | frame["final_qty"].lt(0)).any():
         raise ValueError("Итоговое количество должно быть конечным и неотрицательным")
     frame["manager_override"] = ~np.isclose(frame["final_qty"], frame["recommended_qty"])

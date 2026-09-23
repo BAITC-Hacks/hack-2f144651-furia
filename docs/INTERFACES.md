@@ -71,6 +71,10 @@ Excel, Streamlit session state или внешних API.
 - `review.initial_edits(rows) -> DataFrame`: row_id, selected, adjusted_qty, reason.
 - `review.approve(calculation, edits) -> Approval(signature, approved_at)`:
   выбранные строки валидны; изменённое количество требует причины.
+- Правки содержат ровно одну строку для каждого row_id расчёта, включая
+  невыбранные. Отсутствующие, неизвестные, пустые, повторные ID и недостающие
+  столбцы отклоняются с ValueError до объединения. Перестановка допустима;
+  selected — bool или пустое (не выбрано), adjusted_qty=0 остаётся ручным нулём.
 - `review.export_frame(calculation, edits, approval=None) -> DataFrame`:
   final_qty, manager_override, draft/approved. Ноль — настоящее ручное решение.
   Изменение входов/правок делает старую подпись утверждения недействительной.
