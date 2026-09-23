@@ -9,8 +9,6 @@ from ekt_ui.state import load_bundle
 
 
 def render_bundle_status(bundle):
-    if bundle.mode == "synthetic":
-        st.warning("СИНТЕТИЧЕСКИЕ ДАННЫЕ · учебный пример, не сведения партнёра.")
     st.caption(f"Происхождение набора: {bundle.mode}")
     for note in bundle.notes:
         st.caption(note)

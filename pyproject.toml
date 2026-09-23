@@ -3,7 +3,7 @@ name = "ekt-replenishment"
 version = "0.1.0"
 description = "Local, explainable supplier replenishment MVP"
 requires-python = ">=3.12,<3.15"
-dependencies = ["streamlit", "pandas", "numpy", "openpyxl"]
+dependencies = ["streamlit", "pandas", "numpy", "openpyxl", "altair"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

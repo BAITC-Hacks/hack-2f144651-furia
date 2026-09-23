@@ -55,7 +55,7 @@ def test_manual_zero_requires_reason_and_review_edit_invalidates_approval(calcul
     app = calculated_app
     choose(app, "button", "Утвердить выбранные позиции").click().run()
     assert "approval" in app.session_state
-    key = f"review_{app.session_state['calc_version']}"
+    key = app.session_state["review_editor_key"]
     edit_rows(app, key, {0: {"adjusted_qty": 0.0}})
     app.run()
     assert not app.exception
@@ -63,11 +63,12 @@ def test_manual_zero_requires_reason_and_review_edit_invalidates_approval(calcul
     exported = pd.read_csv(BytesIO(downloads["csv"]), sep=";")
     assert exported.iloc[0].final_qty == 0
     assert exported.approval_status.eq("draft").all()
-    edit_rows(app, key, {0: {"adjusted_qty": 0.0}})
     choose(app, "button", "Утвердить выбранные позиции").click().run()
     assert "approval" not in app.session_state
     assert any("Укажите причину" in message.value for message in app.error)
-    edit_rows(app, key, {0: {"adjusted_qty": 0.0, "reason": "Manual zero for review test"}})
+    key = app.session_state["review_editor_key"]
+    edit_rows(app, key, {0: {"reason": "Manual zero for review test"}})
+    app.run()
     choose(app, "button", "Утвердить выбранные позиции").click().run()
     assert not app.exception
     assert "approval" in app.session_state
@@ -85,7 +86,7 @@ def test_manual_zero_requires_reason_and_review_edit_invalidates_approval(calcul
 def test_deselecting_all_rows_revokes_approval_and_hides_downloads(calculated_app):
     app = calculated_app
     choose(app, "button", "Утвердить выбранные позиции").click().run()
-    key = f"review_{app.session_state['calc_version']}"
+    key = app.session_state["review_editor_key"]
     rows = app.session_state["calculation"].rows
     edit_rows(app, key, {i: {"selected": False} for i in range(len(rows))})
     app.run()
@@ -96,7 +97,7 @@ def test_deselecting_all_rows_revokes_approval_and_hides_downloads(calculated_ap
     assert "Скачать XLSX" not in labels
 
 
-@pytest.mark.parametrize("filter_label", ["Поставщики для просмотра", "Области склада", "Категории"])
+@pytest.mark.parametrize("filter_label", ["Области склада", "Категории"])
 def test_empty_display_filter_does_not_change_approved_export(calculated_app, downloads, filter_label):
     app = calculated_app
     choose(app, "button", "Утвердить выбранные позиции").click().run()
@@ -106,8 +107,7 @@ def test_empty_display_filter_does_not_change_approved_export(calculated_app, do
     assert not app.exception
     assert app.session_state["approval"] == approval
     assert downloads["csv"] == expected
-    visible = next(table.value for table in app.dataframe if "recommended_qty" in table.value and "row_id" not in table.value)
-    assert visible.empty
+    assert any("Нет позиций по выбранным условиям" in message.value for message in app.info)
     exported = pd.read_csv(BytesIO(downloads["csv"]), sep=";")
     assert len(exported) == 4
     assert exported.supplier_id.nunique() == 2

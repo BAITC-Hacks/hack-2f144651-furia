@@ -94,15 +94,13 @@ def render_canonical_import():
 
 
 def render_imports():
-    st.markdown("### EKT / закупки")
-    st.caption("Локальный помощник менеджера")
-    st.divider()
+    st.markdown("**Рабочий набор**")
     source = st.radio("Источник данных", ["Демонстрация", "Мои данные"])
     if source == "Демонстрация":
         st.caption("Четыре синтетических товара и известные контрольные события.")
-        if st.button("Загрузить демо", type="primary", width="stretch"):
+        if st.button("Загрузить демо", icon=":material/science:", width="stretch"):
             load_bundle(cached_demo())
-        st.download_button("Скачать демо для импорта", canonical_zip(cached_demo()), "synthetic_demo.zip", "application/zip", width="stretch")
+        st.download_button("Скачать демо для импорта", canonical_zip(cached_demo()), "synthetic_demo.zip", "application/zip", icon=":material/download:", type="tertiary", width="stretch")
     else:
         import_kind = st.selectbox("Формат", ["Канонические таблицы", "Отчёты IEK / Systeme"])
         if import_kind == "Отчёты IEK / Systeme":
