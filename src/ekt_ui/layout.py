@@ -7,7 +7,7 @@ from ekt_ui.presentation import deliveries, risk_statuses
 
 
 def configure_page():
-    st.set_page_config(page_title="Электрокомплект | Заказы поставщикам", page_icon=":material/inventory_2:", layout="wide")
+    st.set_page_config(page_title="Электрокомплект | Заказы поставщикам", page_icon=":material/inventory_2:", layout="wide", initial_sidebar_state="expanded")
     css = Path(__file__).with_name("styles.css").read_text(encoding="utf-8")
     st.html(f"<style>{css}</style>")
 
@@ -15,15 +15,16 @@ def configure_page():
 def render_brand():
     with st.container(key="brand"):
         st.markdown(":material/electric_bolt: **Электрокомплект**")
-        st.caption("EKT / Управление закупками")
+        st.caption("EKT · Управление закупками")
 
 
-def render_source(bundle):
+def render_source(bundle, as_of):
     with st.container(key="source_banner", horizontal=True, vertical_alignment="center"):
         mode = bundle.mode
         st.badge({"synthetic": "Синтетические данные", "partner": "Данные партнёра", "manual": "Ручные данные"}.get(mode, mode),
                  color="orange" if mode == "synthetic" else "blue", icon=":material/database:")
         st.caption("Учебный набор, не сведения партнёра" if mode == "synthetic" else "Локальная обработка · отправка заказов не выполняется")
+        st.caption(f"Расчёт на {as_of:%d.%m.%Y}")
 
 
 def render_kpis(calculation, bundle, as_of):

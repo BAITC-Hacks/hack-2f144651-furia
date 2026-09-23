@@ -41,8 +41,10 @@ def render_order_grid(calculation, visible):
         st.session_state.review_context = context
         st.session_state.review_revision = st.session_state.get("review_revision", 0) + 1
     with st.container(key="grid_tools"):
-        info, select_col, clear_col = st.columns([10, .6, .6], vertical_alignment="center")
+        info, mode_col, select_col, clear_col = st.columns([6, 3, .6, .6], vertical_alignment="center")
     info.caption(f"Показано {len(visible)} из {len(calculation.rows)} позиций")
+    view = mode_col.segmented_control("Вид таблицы", ["Заказ", "Расчёт"], default="Заказ",
+                                      required=True, key="order_view", label_visibility="collapsed")
     if select_col.button("Выбрать видимые", icon=":material/checklist:", help="Выбрать только показанные позиции с завершённым расчётом.", disabled=visible.empty, key="select_visible", width=36):
         changed = edits.copy()
         changed.loc[changed.row_id.isin(visible.loc[visible.recommended_qty.notna(), "row_id"]), "selected"] = True
@@ -56,10 +58,12 @@ def render_order_grid(calculation, visible):
     if visible.empty:
         st.info("Нет позиций по выбранным условиям. Выбор позиций для экспорта сохранён.")
         return
-    columns = ["selected", "sku_1c", "name", "priority", "unit", "available_stock", "inbound_within_horizon",
-               "expected_demand_horizon", "recommended_qty", "adjusted_qty", "history", "manual_edit", "reason", "supplier_id", "row_id"]
+    columns = ["selected", "supplier_id", "sku_1c", "name", "priority", "unit"]
+    if view == "Расчёт":
+        columns += ["available_stock", "inbound_within_horizon", "expected_demand_horizon"]
+    columns += ["recommended_qty", "adjusted_qty", "reason", "manual_edit", "history", "row_id"]
     frame = visible[columns].reset_index(drop=True)
-    key = f"review_{st.session_state.calc_version}_{st.session_state.get('review_revision', 0)}"
+    key = f"review_{st.session_state.calc_version}_{st.session_state.get('review_revision', 0)}_{view}"
     st.session_state.review_editor_key = key
     edited = st.data_editor(
         frame.style.apply(grid_style, axis=None), hide_index=True, width="stretch",
@@ -67,19 +71,19 @@ def render_order_grid(calculation, visible):
         disabled=[name for name in columns if name not in ("selected", "adjusted_qty", "reason")],
         column_config={
             "row_id": None,
-            "selected": st.column_config.CheckboxColumn("Выбор", width=50),
-            "sku_1c": st.column_config.TextColumn("Код 1С", width=100),
-            "name": st.column_config.TextColumn("Товар", width=210),
-            "priority": st.column_config.TextColumn("Срочность", width=120),
-            "unit": st.column_config.TextColumn("Ед.", width=50),
+            "selected": st.column_config.CheckboxColumn("Выбор", width=46),
+            "sku_1c": st.column_config.TextColumn("Код 1С", width=88),
+            "name": st.column_config.TextColumn("Товар", width=196),
+            "priority": st.column_config.TextColumn("Срочность", width=100),
+            "unit": st.column_config.TextColumn("Ед.", width=42),
             "available_stock": st.column_config.NumberColumn("Доступно", width=90, format="%.1f", help="Подтверждённый доступный остаток после резерва."),
             "inbound_within_horizon": st.column_config.NumberColumn("В пути", width=85, format="%.1f", help="Подтверждённые партии, которые движок учёл в горизонте. ETA и исключённые партии доступны в «Почему столько?»."),
             "expected_demand_horizon": st.column_config.NumberColumn("Прогноз", width=90, format="%.1f"),
             "recommended_qty": st.column_config.NumberColumn("Реком.", width=85, format="%.2f"),
             "adjusted_qty": st.column_config.NumberColumn("Заказать", width=90, min_value=0.0, format="%.2f", help="Ноль допустим. Изменение количества требует причины перед утверждением."),
-            "history": st.column_config.LineChartColumn("Продажи, 6 мес.", width=115, help="Фактические месячные продажи, без повторного суммирования детализации."),
-            "manual_edit": st.column_config.TextColumn("Правка", width=125),
-            "reason": st.column_config.TextColumn("Причина изменения", width=220),
+            "history": st.column_config.LineChartColumn("Продажи, 6 мес.", width=104, help="Фактические месячные продажи, без повторного суммирования детализации."),
+            "manual_edit": st.column_config.TextColumn("Правка", width=110),
+            "reason": st.column_config.TextColumn("Причина изменения", width=180),
             "supplier_id": st.column_config.TextColumn("Поставщик", width=90),
         },
     )

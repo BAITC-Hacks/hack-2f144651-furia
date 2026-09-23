@@ -15,21 +15,24 @@ def main():
     configure_page()
     with st.sidebar:
         render_brand()
-        render_imports()
-        as_of, remove_oneoffs, compensate = render_calculation_options()
+        with st.expander("Импорт данных", expanded=True, icon=":material/upload_file:"):
+            render_imports()
+        with st.expander("Параметры расчёта", expanded=False, icon=":material/tune:"):
+            as_of, remove_oneoffs, compensate = render_calculation_options()
+        st.caption(":material/lock: Локальное рабочее пространство")
 
     bundle = st.session_state.get("bundle")
     with st.container(key="workspace_header"):
         title, action = st.columns([4, 1.6], vertical_alignment="center")
         with title:
-            st.caption("ЭЛЕКТРОКОМПЛЕКТ / ЗАКУПКИ")
-            st.title("Автоматизация заказов поставщикам")
+            st.caption("ЭЛЕКТРОКОМПЛЕКТ / ПЛАНИРОВАНИЕ")
+            st.title("Заказы поставщикам")
         with action:
             calculation = render_calculation(bundle, as_of, remove_oneoffs, compensate) if bundle is not None else None
             if bundle is None:
                 st.button("Рассчитать предложения", disabled=True, type="primary", icon=":material/calculate:", width="stretch")
     if bundle is not None:
-        render_source(bundle)
+        render_source(bundle, as_of)
     if notice := st.session_state.pop("input_notice", None):
         st.warning(notice)
     render_kpis(calculation, bundle, as_of)
@@ -39,14 +42,16 @@ def main():
     ])
     visible_ids = []
     with order_tab:
-        heading, export = st.columns([5, 1], vertical_alignment="center")
+        with st.container(key="orders_heading"):
+            heading, export = st.columns([5, 1], vertical_alignment="center")
         heading.subheader("Предложения к заказу")
         with export, st.popover("Экспорт", icon=":material/download:", disabled=calculation is None, width="stretch"):
             if calculation is not None:
                 render_downloads(calculation, bundle.mode, as_of)
         if calculation is not None:
             grid = order_grid(calculation, current_edits(calculation))
-            visible = render_filters(grid)
+            with st.container(key="order_filters"):
+                visible = render_filters(grid)
             visible_ids = visible.row_id.tolist()
             render_order_grid(calculation, visible)
             render_detail_launcher(calculation, bundle, visible)

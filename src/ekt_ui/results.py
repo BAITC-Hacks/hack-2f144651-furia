@@ -9,12 +9,9 @@ from ekt_ui.state import clear_review, invalidate_changed_inputs
 
 
 def render_calculation_options():
-    st.divider()
-    st.markdown("**Параметры расчёта**")
     as_of = st.date_input("Дата расчёта", DEMO_DATE.date(), help="Должна совпадать с датой подтверждённого текущего остатка.")
     remove_oneoffs = st.toggle("Исключать разовые заказы", value=True)
     compensate = st.toggle("Восстанавливать stockout", value=True, help="Только по явно введённым подтверждённым интервалам.")
-    st.caption("Локальный расчёт. API-ключ не требуется.")
     return as_of, remove_oneoffs, compensate
 
 
@@ -37,17 +34,28 @@ def render_calculation(bundle, as_of, remove_oneoffs, compensate):
     return st.session_state.get("calculation")
 
 
+def reset_filters(categories, scopes):
+    st.session_state.update(supplier_group="Все поставщики", order_search="",
+                            order_categories=categories, order_scopes=scopes, order_risk="Все")
+
+
 def render_filters(rows):
     suppliers = rows.supplier_id.unique().tolist()
-    supplier = st.segmented_control("Поставщики", ["Все поставщики"] + suppliers,
-                                   default="Все поставщики", required=True, key="supplier_group",
-                                   label_visibility="collapsed")
+    categories = rows.category_id.fillna("Не указана").unique().tolist()
+    scopes = rows.warehouse_scope.unique().tolist()
+    with st.container(key="filter_heading"):
+        supplier_col, reset_col = st.columns([10, 1], vertical_alignment="center")
+    with supplier_col:
+        supplier = st.segmented_control("Поставщики", ["Все поставщики"] + suppliers,
+                                       default="Все поставщики", required=True, key="supplier_group",
+                                       label_visibility="collapsed")
+    reset_col.button("Сбросить фильтры", icon=":material/filter_alt_off:", key="reset_filters",
+                     help="Сбросить поиск и фильтры. Правки и выбор позиций сохраняются.", width=36,
+                     on_click=reset_filters, args=(categories, scopes))
     search_col, category_col, scope_col, risk_col = st.columns([2.4, 1.2, 1.2, 1.5])
     search = search_col.text_input("Поиск товара", placeholder="Код 1С, артикул или название", icon=":material/search:", key="order_search")
-    categories = rows.category_id.fillna("Не указана").unique().tolist()
-    category_filter = category_col.multiselect("Категории", categories, default=categories, placeholder="Категории")
-    scopes = rows.warehouse_scope.unique().tolist()
-    scope_filter = scope_col.multiselect("Области склада", scopes, default=scopes, placeholder="Области склада")
-    risk = risk_col.selectbox("Уровень риска", ["Все", "Риск дефицита", "Критично", "Пополнение", "Норма", "Нужны данные", "Риск не определён", "Ручные правки"], help="Критично: прогнозируемый дефицит менее чем через 7 дней. «Риск дефицита» включает только прогнозируемый дефицит; пополнение может быть нужно для страхового запаса.")
+    category_filter = category_col.multiselect("Категории", categories, default=categories, placeholder="Категории", key="order_categories")
+    scope_filter = scope_col.multiselect("Области склада", scopes, default=scopes, placeholder="Области склада", key="order_scopes")
+    risk = risk_col.selectbox("Уровень риска", ["Все", "Риск дефицита", "Критично", "Пополнение", "Норма", "Нужны данные", "Риск не определён", "Ручные правки"], key="order_risk", help="Критично: прогнозируемый дефицит менее чем через 7 дней. «Риск дефицита» включает только прогнозируемый дефицит; пополнение может быть нужно для страхового запаса.")
     return filter_orders(rows, suppliers if supplier == "Все поставщики" else [supplier],
                          scope_filter, category_filter, risk, search)

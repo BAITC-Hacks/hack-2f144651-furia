@@ -94,7 +94,6 @@ def render_canonical_import():
 
 
 def render_imports():
-    st.markdown("**Рабочий набор**")
     source = st.radio("Источник данных", ["Демонстрация", "Мои данные"])
     if source == "Демонстрация":
         st.caption("Четыре синтетических товара и известные контрольные события.")
